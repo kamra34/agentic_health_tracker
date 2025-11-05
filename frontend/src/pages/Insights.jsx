@@ -57,7 +57,7 @@ function Insights() {
   // Build chart data: historical + forecast points merged by date
   const chartData = useMemo(() => {
     if (!history) return [];
-    const h = (history || []).map(pt => {
+    let h = (history || []).map(pt => {
       const d = new Date(pt.date);
       const base = { date: d, dateLabel: format(d, 'yyyy-MM-dd') };
       if (metric === 'weight') return { ...base, actual: parseFloat(pt.weight) };
@@ -69,6 +69,14 @@ function Insights() {
       }
       return null;
     }).filter(Boolean);
+
+    // Apply training window filter to the displayed history
+    if (h.length > 0 && trainWindow && trainWindow < 10000) {
+      const lastDate = h[h.length - 1].date;
+      const cutoff = new Date(lastDate);
+      cutoff.setDate(cutoff.getDate() - (trainWindow - 1));
+      h = h.filter(p => p.date >= cutoff);
+    }
 
     const f = (forecast?.points || []).map((p) => {
       // API returns date objects; ensure Date

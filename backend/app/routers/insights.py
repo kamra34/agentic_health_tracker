@@ -241,6 +241,28 @@ def _cache_set(bucket: str, user_id: int, data: object):
     _cache.setdefault(bucket, {})[user_id] = (datetime.utcnow().timestamp(), data)
 
 
+# Specialized helpers for forecast cache to include parameter keying
+def _forecast_cache_get(user_id: int, key: str):
+    rec = _cache.get("forecast", {}).get(user_id)
+    if not rec:
+        return None
+    ts, data = rec
+    if (datetime.utcnow().timestamp() - ts) > _CACHE_TTL_SECONDS:
+        return None
+    if getattr(data, "_cache_key", None) == key:
+        return data
+    return None
+
+
+def _forecast_cache_set(user_id: int, key: str, data: object):
+    # attach key for validation
+    try:
+        setattr(data, "_cache_key", key)
+    except Exception:
+        pass
+    _cache.setdefault("forecast", {})[user_id] = (datetime.utcnow().timestamp(), data)
+
+
 # ---------------- Endpoints ----------------
 @router.get("/summary", response_model=SummaryResponse)
 def get_summary(
@@ -445,10 +467,10 @@ def get_forecast(
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    cached = _cache_get("forecast", current_user.id)
-    if cached and cached.metric == metric and cached.horizon_days == horizon:
-        # ignore cache if method differs from previous stored method
-        pass
+    cache_key = f"{metric}:{method}:{horizon}:{train_window_days}"
+    cached = _forecast_cache_get(current_user.id, cache_key)
+    if cached:
+        return cached
     weights = (
         db.query(models.Weight)
         .filter(models.Weight.user_id == current_user.id)
@@ -534,7 +556,7 @@ def get_forecast(
         last_observation_date=last_date,
         points=points,
     )
-    _cache_set("forecast", current_user.id, resp)
+    _forecast_cache_set(current_user.id, cache_key, resp)
     return resp
 
 

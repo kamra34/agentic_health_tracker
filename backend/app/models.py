@@ -13,6 +13,7 @@ class User(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(50), nullable=False)
+    email = Column(String(100), unique=True)  # optional
     sex = Column(String(10))
     height = Column(Numeric(5, 2))  # in cm
     activity_level = Column(String(10))

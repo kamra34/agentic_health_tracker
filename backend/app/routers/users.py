@@ -225,6 +225,20 @@ def update_my_profile(
                 detail="Username already taken"
             )
         current_user.name = user_update.name
+
+    if user_update.email is not None:
+        # Check email uniqueness if provided (allow null/empty)
+        if user_update.email:
+            existing_email = db.query(models.User).filter(
+                models.User.email == user_update.email,
+                models.User.id != current_user.id
+            ).first()
+            if existing_email:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Email already in use"
+                )
+        current_user.email = user_update.email or None
     
     if user_update.sex is not None:
         current_user.sex = user_update.sex

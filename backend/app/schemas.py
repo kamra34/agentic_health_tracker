@@ -27,6 +27,7 @@ class UserCreate(UserBase):
 class UserUpdate(BaseModel):
     """Schema for user updates (all fields optional)."""
     name: Optional[str] = Field(None, min_length=1, max_length=50)
+    email: Optional[str] = None
     sex: Optional[str] = Field(None, max_length=10)
     height: Optional[Decimal] = Field(None, ge=0, le=300)
     activity_level: Optional[str] = Field(None, max_length=10)

@@ -11,6 +11,7 @@ function Layout() {
     { to: '/targets', icon: Target, label: 'Targets' },
     { to: '/insights', icon: BarChart3, label: 'Insights' },
     { to: '/profile', icon: User, label: 'Profile' },
+    ...(user?.is_admin ? [{ to: '/admin', icon: User, label: 'Admin' }] : []),
   ];
 
   return (

@@ -120,6 +120,46 @@ def _moving_average(values: List[float], window: int) -> List[Optional[float]]:
     return out
 
 
+def _polyfit2(xs: List[float], ys: List[float]):
+    """Quadratic least-squares fit ys ~ a0 + a1*x + a2*x^2 without NumPy.
+    Returns (a0, a1, a2).
+    """
+    n = len(xs)
+    if n < 3:
+        # Fallback to linear
+        b, a, _ = _linear_regression(xs, ys)
+        return a, b, 0.0
+    Sx = sum(xs)
+    Sx2 = sum(x*x for x in xs)
+    Sx3 = sum(x*x*x for x in xs)
+    Sx4 = sum((x*x)*(x*x) for x in xs)
+    Sy = sum(ys)
+    Sxy = sum(x*y for x, y in zip(xs, ys))
+    Sx2y = sum((x*x)*y for x, y in zip(xs, ys))
+
+    # Solve 3x3 normal equations using Gaussian elimination
+    A = [
+        [n, Sx, Sx2, Sy],
+        [Sx, Sx2, Sx3, Sxy],
+        [Sx2, Sx3, Sx4, Sx2y],
+    ]
+    # Forward elimination
+    for i in range(3):
+        # pivot
+        piv = A[i][i] if A[i][i] != 0 else 1e-12
+        for j in range(i, 4):
+            A[i][j] = A[i][j] / piv
+        for k in range(i + 1, 3):
+            factor = A[k][i]
+            for j in range(i, 4):
+                A[k][j] -= factor * A[i][j]
+    # Back substitution
+    a2 = A[2][3]
+    a1 = A[1][3] - A[1][2] * a2
+    a0 = A[0][3] - A[0][2] * a2 - A[0][1] * a1
+    return a0, a1, a2
+
+
 # ---------------- Schemas ----------------
 class Milestones(BaseModel):
     min_weight: Optional[float] = None
@@ -396,11 +436,12 @@ def get_summary(
 
 @router.get("/forecast", response_model=ForecastResponse)
 def get_forecast(
-    metric: str = Query("weight", pattern="^(weight)$"),
-    horizon: int = Query(60, ge=1, le=180),
-    alpha: float = Query(0.3, ge=0.05, le=0.9),
-    beta: float = Query(0.1, ge=0.01, le=0.9),
-    method: str = Query("holt", pattern="^(holt|ses)$"),
+    metric: str = Query("weight", pattern="^(weight|bmi)$"),
+    horizon: int = Query(60, ge=1, le=365),
+    alpha: float = Query(0.3, ge=0.05, le=0.95),
+    beta: float = Query(0.1, ge=0.01, le=0.95),
+    method: str = Query("holt", pattern="^(holt|ses|ols|poly2)$"),
+    train_window_days: Optional[int] = Query(60, ge=7, le=2000, description="Use last N days of data for training"),
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -418,8 +459,25 @@ def get_forecast(
     if len(series) < 2:
         return ForecastResponse(metric=metric, horizon_days=horizon, last_observation_date=None, points=[])
 
+    # Optional training window subset
+    if train_window_days is not None and train_window_days > 0:
+        cutoff = series[-1][0] - timedelta(days=train_window_days - 1)
+        series = [(d, v) for (d, v) in series if d >= cutoff]
+        if len(series) < 2:  # ensure at least two points
+            series = _to_series(weights)[-2:]
+
     dates, values = zip(*series)
     values = list(values)
+
+    # Metric transform
+    if metric == "bmi":
+        h_cm = float(current_user.height) if getattr(current_user, 'height', None) else None
+        if h_cm and h_cm > 0:
+            h_m = h_cm / 100.0
+            values = [v / (h_m * h_m) for v in values]
+        else:
+            # No height -> cannot compute BMI; return empty forecast
+            return ForecastResponse(metric=metric, horizon_days=horizon, last_observation_date=dates[-1], points=[])
     last_date = dates[-1]
     z80 = 1.28  # ~80% interval
 
@@ -435,7 +493,7 @@ def get_forecast(
             f = last_s
             band = z80 * resid_std  # simple constant band
             points.append(ForecastPoint(date=d, forecast=round(float(f), 2), lower=round(float(f - band), 2), upper=round(float(f + band), 2)))
-    else:
+    elif method == "holt":
         # Holt's linear trend forecast
         levels, trends, fitted, resid_std = _holt_linear(values, alpha=alpha, beta=beta)
         lT, bT = levels[-1], trends[-1]
@@ -444,6 +502,31 @@ def get_forecast(
             f = lT + h * bT
             band = z80 * resid_std * (h ** 0.5)  # widen with horizon
             points.append(ForecastPoint(date=d, forecast=round(float(f), 2), lower=round(float(f - band), 2), upper=round(float(f + band), 2)))
+    elif method == "ols":
+        # Linear regression y ~ a + b*x
+        xs = _daily_x_axis(list(dates))
+        b, a, _ = _linear_regression(xs, values)  # returns slope, intercept, r2
+        fitted = [a + b * x for x in xs]
+        residuals = [y - yhat for y, yhat in zip(values, fitted)]
+        resid_std = pstdev(residuals) if len(residuals) >= 2 else 0.0
+        last_x = xs[-1]
+        for h in range(1, horizon + 1):
+            x = last_x + h
+            f = a + b * x
+            band = z80 * resid_std * (h ** 0.5)
+            points.append(ForecastPoint(date=last_date + timedelta(days=h), forecast=round(float(f), 2), lower=round(float(f - band), 2), upper=round(float(f + band), 2)))
+    else:  # poly2 quadratic regression
+        xs = _daily_x_axis(list(dates))
+        a0, a1, a2 = _polyfit2(xs, values)
+        fitted = [a0 + a1 * x + a2 * x * x for x in xs]
+        residuals = [y - yhat for y, yhat in zip(values, fitted)]
+        resid_std = pstdev(residuals) if len(residuals) >= 2 else 0.0
+        last_x = xs[-1]
+        for h in range(1, horizon + 1):
+            x = last_x + h
+            f = a0 + a1 * x + a2 * x * x
+            band = z80 * resid_std * (h ** 0.5)
+            points.append(ForecastPoint(date=last_date + timedelta(days=h), forecast=round(float(f), 2), lower=round(float(f - band), 2), upper=round(float(f + band), 2)))
 
     resp = ForecastResponse(
         metric=metric,

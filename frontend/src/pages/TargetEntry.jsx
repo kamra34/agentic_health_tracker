@@ -139,19 +139,23 @@ function TargetEntry() {
   };
 
   const getStatusColor = (status) => {
-    switch (status) {
+    const s = (status || '').toLowerCase();
+    switch (s) {
       case 'active': return 'bg-blue-100 text-blue-800 border-blue-200';
       case 'completed': return 'bg-green-100 text-green-800 border-green-200';
-      case 'Failed': return 'bg-gray-100 text-gray-800 border-gray-200';
+      case 'failed':
+      case 'cancelled': return 'bg-gray-100 text-gray-800 border-gray-200';
       default: return 'bg-gray-100 text-gray-800 border-gray-200';
     }
   };
 
   const getStatusIcon = (status) => {
-    switch (status) {
+    const s = (status || '').toLowerCase();
+    switch (s) {
       case 'active': return <Clock className="w-4 h-4" />;
       case 'completed': return <CheckCircle className="w-4 h-4" />;
-      case 'Failed': return <XCircle className="w-4 h-4" />;
+      case 'failed':
+      case 'cancelled': return <XCircle className="w-4 h-4" />;
       default: return null;
     }
   };
@@ -317,9 +321,10 @@ function TargetEntry() {
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {targets.map((target) => {
-            const isActive = target.status === 'active';
-            const isCompleted = target.status === 'completed';
-            const isCancelled = target.status === 'failed';
+            const statusLc = (target.status || '').toLowerCase();
+            const isActive = statusLc === 'active';
+            const isCompleted = statusLc === 'completed';
+            const isCancelled = statusLc === 'failed' || statusLc === 'cancelled';
             const isPast = new Date(target.date_of_target) < new Date();
             // Prefer server-enriched values when available
             const weightToLose = (target.final_weight !== undefined && target.final_weight !== null)

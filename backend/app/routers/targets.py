@@ -3,7 +3,7 @@ Target weight routes: CRUD operations for weight goals.
 """
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import desc
+from sqlalchemy import desc, func
 from typing import List
 from datetime import date
 
@@ -61,7 +61,18 @@ def list_targets(
     )
     
     if status_filter:
-        query = query.filter(models.TargetWeight.status == status_filter)
+        # Normalize and support legacy synonyms/casing
+        normalized = status_filter.lower()
+        synonyms = {
+            "active": ["active"],
+            "completed": ["completed", "success"],
+            "failed": ["failed", "cancelled"],
+        }
+        if normalized in synonyms:
+            query = query.filter(func.lower(models.TargetWeight.status).in_(synonyms[normalized]))
+        else:
+            # Fallback to case-insensitive exact match
+            query = query.filter(func.lower(models.TargetWeight.status) == normalized)
     
     targets = query.order_by(desc(models.TargetWeight.created_date)).offset(skip).limit(limit).all()
 

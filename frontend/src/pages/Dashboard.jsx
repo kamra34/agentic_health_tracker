@@ -691,18 +691,97 @@ function Dashboard() {
                       </div>
                     </div>
 
-                    {/* Estimated Completion (if available) */}
-                    {target.estimated_completion && (
-                      <div className="mt-3 pt-3 border-t border-gray-200">
-                        <div className="flex items-center gap-2 text-sm">
-                          <ProgressIcon className="w-4 h-4 text-blue-500" />
-                          <span className="text-gray-600">Est. completion:</span>
-                          <span className="font-medium text-blue-700">
-                            {format(new Date(target.estimated_completion), 'MMM dd, yyyy')}
-                          </span>
-                        </div>
-                      </div>
-                    )}
+              {/* Estimated Completion (if available) */}
+              {target.estimated_completion && (
+                <div className="mt-3 pt-3 border-t border-gray-200">
+                  <div className="flex items-center gap-2 text-sm">
+                    <ProgressIcon className="w-4 h-4 text-blue-500" />
+                    <span className="text-gray-600">Est. completion:</span>
+                    <span className="font-medium text-blue-700">
+                      {format(new Date(target.estimated_completion), 'MMM dd, yyyy')}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Current vs Target tiles (simplified) */}
+              {(() => {
+                const heightCm = user?.height ? parseFloat(user.height) : null;
+                const h = heightCm ? heightCm / 100 : null;
+                const sex = (user?.sex || '').toLowerCase();
+                const dob = user?.date_of_birth ? new Date(user.date_of_birth) : null;
+                const today = new Date();
+                const age = dob ? Math.max(0, today.getFullYear() - dob.getFullYear() - ((today.getMonth()<dob.getMonth()) || (today.getMonth()===dob.getMonth() && today.getDate()<dob.getDate()) ? 1 : 0)) : null;
+                const currentW = target.final_weight != null ? parseFloat(target.final_weight) : null;
+                const targetW = target.target_weight != null ? parseFloat(target.target_weight) : null;
+                if (!h || !currentW || !targetW) return null;
+
+                const bmi = (w) => +(w / (h*h)).toFixed(2);
+                const isMale = sex.startsWith('m');
+                const bf = (w) => {
+                  if (age == null) return null;
+                  const b = bmi(w);
+                  const flag = isMale ? 1 : 0;
+                  const val = 1.2*b + 0.23*age - 10.8*flag - 5.4;
+                  return +Math.min(60, Math.max(3, val)).toFixed(1);
+                };
+                const lbm = (w) => {
+                  const val = isMale ? (0.407*w + 0.267*heightCm - 19.2) : (0.252*w + 0.473*heightCm - 48.3);
+                  return +Math.max(0, Math.min(w, val)).toFixed(1);
+                };
+
+                const rows = [
+                  { key: 'bmi', label: 'BMI', cur: bmi(currentW), to: bmi(targetW), unit: '', better: 'lower', healthy: [18.5, 25] },
+                  { key: 'fat', label: 'Body Fat %', cur: bf(currentW), to: bf(targetW), unit: '%', better: 'lower', healthy: isMale ? [10,20] : [18,28] },
+                  { key: 'muscle', label: 'Lean Mass', cur: lbm(currentW), to: lbm(targetW), unit: 'kg', better: 'higher' },
+                ];
+
+                const Chip = ({ title, value, unit, tone='default' }) => (
+                  <div className={`px-3 py-2 rounded-lg border text-sm ${
+                    tone==='good' ? 'bg-green-50 border-green-200 text-green-700' :
+                    tone==='warn' ? 'bg-orange-50 border-orange-200 text-orange-700' :
+                    'bg-gray-50 border-gray-200 text-gray-700'
+                  }`}>
+                    <div className="text-[11px] uppercase tracking-wide text-gray-500">{title}</div>
+                    <div className="font-semibold">{value}{unit}</div>
+                  </div>
+                );
+
+                const BetterHint = ({ better, cur, to }) => {
+                  const good = better==='lower' ? (to < cur) : (to > cur);
+                  return (
+                    <div className="text-xs">
+                      <span className="text-gray-500 mr-1">Δ</span>
+                      <span className={`${good ? 'text-green-700' : 'text-orange-700'}`}>
+                        {(to - cur > 0 ? '+' : '')}{(to - cur).toFixed( rows.find(r=>r.cur===cur)?.unit==='%' ? 1 : (rows.find(r=>r.cur===cur)?.key==='bmi' ? 2 : 1) )}
+                      </span>
+                      <span className="ml-1 text-gray-500">{good ? 'toward healthy' : 'away'}</span>
+                    </div>
+                  );
+                };
+
+                return (
+                  <div className="mt-4 pt-3 border-t border-gray-200">
+                    <p className="text-sm font-medium text-gray-700 mb-2">Current vs Target</p>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      {rows.map((r) => (
+                        (r.cur!=null && r.to!=null) && (
+                          <div key={r.key} className="p-3 rounded-lg bg-white border border-gray-200">
+                            <div className="text-xs text-gray-500 mb-1">{r.label}</div>
+                            <div className="grid grid-cols-2 gap-2 items-start">
+                              <Chip title="Current" value={r.cur} unit={r.unit} />
+                              <Chip title="Target" value={r.to} unit={r.unit} tone={(r.better==='lower' ? (r.to < r.cur) : (r.to > r.cur)) ? 'good':'warn'} />
+                            </div>
+                            <div className="mt-2">
+                              <BetterHint better={r.better} cur={r.cur} to={r.to} />
+                            </div>
+                          </div>
+                        )
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
                   </div>
                 );
               })}

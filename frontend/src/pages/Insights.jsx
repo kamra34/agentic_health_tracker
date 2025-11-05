@@ -128,12 +128,7 @@ function Insights() {
         <TrendSlopeCard summary={summary} />
         <BMITrendSlopeCard summary={summary} dashboard={dashboard} />
         <VolatilityCard summary={summary} />
-        <KpiCard
-          label="Adherence (entries/week)"
-          value={summary ? summary.adherence.entries_per_week.toFixed(2) : '--'}
-          info="Logging consistency. Details: avg days between, streak, and longest gap."
-          subtitle={adhRange}
-        />
+        <AdherenceCard summary={summary} dashboard={dashboard} />
       </div>
 
       {/* Main layout: left (trends) and right (diagnostics/goals/what-if) */}
@@ -610,6 +605,40 @@ function VolatilityCard({ summary }) {
       <div className="mt-2 text-xs text-gray-600">
         <div>Range: {start} - {end}</div>
         {n != null && <div>Daily deltas used: {n}</div>}
+      </div>
+    </div>
+  );
+}
+
+function AdherenceCard({ summary, dashboard }) {
+  const has = summary && summary.adherence_window_start && summary.adherence_window_end;
+  const start = has ? format(new Date(summary.adherence_window_start), 'yyyy-MM-dd') : '--';
+  const end = has ? format(new Date(summary.adherence_window_end), 'yyyy-MM-dd') : '--';
+  const epw = summary ? summary.adherence.entries_per_week.toFixed(2) : '--';
+  const avgGap = summary?.adherence?.avg_days_between != null ? ${summary.adherence.avg_days_between} days : '--';
+  const streak = summary?.adherence?.current_streak != null ? ${summary.adherence.current_streak} days : '--';
+  const longestGap = summary?.adherence?.longest_gap_days != null ? ${summary.adherence.longest_gap_days} days : '--';
+  const total = dashboard?.stats?.total_entries != null ? dashboard.stats.total_entries : undefined;
+  let weeksCovered = '--';
+  if (has) {
+    const days = Math.max(1, Math.round((new Date(summary.adherence_window_end) - new Date(summary.adherence_window_start)) / (1000*3600*24)) + 1);
+    weeksCovered = (days / 7).toFixed(1);
+  }
+  return (
+    <div className="stat-card bg-gradient-to-br from-sky-50 to-sky-100 border-sky-200">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-gray-700">Adherence</p>
+        <span title="Entries per week based on unique logging days over the shown range." className="ml-2 inline-flex items-center justify-center w-5 h-5 text-[10px] font-semibold rounded-full border border-gray-300 text-gray-600 bg-white cursor-help">i</span>
+      </div>
+      <div className="mt-1 text-gray-900">
+        <div className="text-lg font-semibold">{epw} entries/week</div>
+        <div className="text-sm">Avg gap: {avgGap}</div>
+        <div className="text-sm">Current streak: {streak}</div>
+        <div className="text-sm">Longest gap: {longestGap}</div>
+      </div>
+      <div className="mt-2 text-xs text-gray-600">
+        <div>Range: {start} - {end} {weeksCovered !== '--' && (~ weeks)}</div>
+        {total != null && <div>Total entries: {total}</div>}
       </div>
     </div>
   );

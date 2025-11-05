@@ -48,6 +48,9 @@ class UserWithStats(User):
     current_weight: Optional[Decimal] = None
     current_bmi: Optional[float] = None
     active_targets: int = 0
+    total_targets: int = 0
+    completed_targets: int = 0
+    failed_targets: int = 0
 
 
 # ============ Weight Schemas ============

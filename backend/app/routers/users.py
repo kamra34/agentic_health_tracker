@@ -166,10 +166,24 @@ def get_my_profile(
     if current_weight and current_user.height:
         current_bmi = calculate_bmi(current_weight, float(current_user.height))
     
-    # Count active targets
+    # Targets summary (case-insensitive, handle synonyms)
+    total_targets = db.query(func.count(models.TargetWeight.id)).filter(
+        models.TargetWeight.user_id == current_user.id
+    ).scalar()
+
     active_targets = db.query(func.count(models.TargetWeight.id)).filter(
         models.TargetWeight.user_id == current_user.id,
-        models.TargetWeight.status == "active"
+        func.lower(models.TargetWeight.status) == "active"
+    ).scalar()
+
+    completed_targets = db.query(func.count(models.TargetWeight.id)).filter(
+        models.TargetWeight.user_id == current_user.id,
+        func.lower(models.TargetWeight.status).in_(["completed", "success"])
+    ).scalar()
+
+    failed_targets = db.query(func.count(models.TargetWeight.id)).filter(
+        models.TargetWeight.user_id == current_user.id,
+        func.lower(models.TargetWeight.status).in_(["failed", "cancelled"])
     ).scalar()
     
     # Build response
@@ -178,7 +192,10 @@ def get_my_profile(
         "total_weights": total_weights,
         "current_weight": current_weight,
         "current_bmi": current_bmi,
-        "active_targets": active_targets
+        "active_targets": active_targets,
+        "total_targets": total_targets,
+        "completed_targets": completed_targets,
+        "failed_targets": failed_targets
     }
     
     return schemas.UserWithStats(**user_dict)

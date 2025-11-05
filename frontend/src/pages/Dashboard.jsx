@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { userAPI } from '../services/api';
-import { TrendingUp, TrendingDown, Target, Scale, Calendar, Award, ArrowDown } from 'lucide-react';
+import { TrendingUp, TrendingDown, Target, Scale, Calendar, Award, ArrowDown, Clock, TrendingUp as ProgressIcon, CheckCircle, XCircle } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Brush } from 'recharts';
 import { format, subDays, subMonths } from 'date-fns';
 
@@ -85,7 +85,6 @@ function Dashboard() {
         weight: parseFloat(item.weight),
       }));
 
-    // If no data in selected window, return all available data
     return filtered.length > 0 ? filtered : weight_trend.map(item => ({
       date: format(new Date(item.date), 'MMM dd'),
       fullDate: item.date,
@@ -95,7 +94,21 @@ function Dashboard() {
 
   const chartData = getFilteredChartData();
 
-  // Render trend indicator using backend-calculated values
+  // Commitment: % of last 30 days with at least one entry
+  const commitmentPercentage = (() => {
+    if (!weight_trend || weight_trend.length === 0) return null;
+    const now = new Date();
+    const start = subDays(now, 30);
+    const uniqueDays = new Set(
+      weight_trend
+        .filter(item => new Date(item.date) >= start)
+        .map(item => new Date(item.date).toDateString())
+    );
+    const pct = Math.max(0, Math.min(100, Math.round((uniqueDays.size / 30) * 100)));
+    return pct;
+  })();
+
+  // Render trend indicator
   const TrendIndicator = ({ change, label }) => {
     if (change === null || change === undefined) {
       return (
@@ -141,7 +154,7 @@ function Dashboard() {
               </p>
               
               {/* Total change indicator */}
-              {/* {stats.total_change && (
+              {stats.total_change && (
                 <div className="flex items-center mt-2 text-sm pb-2 border-b border-blue-200">
                   <ArrowDown className="w-4 h-4 text-red-600 mr-1" />
                   <span className="text-red-600 font-medium">
@@ -149,9 +162,9 @@ function Dashboard() {
                   </span>
                   <span className="text-gray-500 ml-1">total</span>
                 </div>
-              )} */}
+              )}
 
-              {/* Trend indicators from backend */}
+              {/* Trend indicators */}
               <div className="mt-2 space-y-1">
                 <TrendIndicator change={stats.weekly_change} label="week" />
                 <TrendIndicator change={stats.monthly_change} label="month" />
@@ -197,17 +210,34 @@ function Dashboard() {
           </div>
         </div>
 
-        {/* Active Goals */}
+        {/* Total Goals with breakdown */}
         <div className="stat-card bg-gradient-to-br from-orange-50 to-orange-100 border-orange-200">
           <div className="flex items-start justify-between">
             <div>
-              <p className="text-sm text-orange-600 font-medium">Active Goals</p>
+              <p className="text-sm text-orange-600 font-medium">Total Goals</p>
               <p className="text-3xl font-bold text-orange-700 mt-2">
-                {user.active_targets}
+                {user.total_targets ?? 0}
               </p>
-              {user.active_targets > 0 && (
-                <p className="text-sm text-gray-600 mt-2">Keep pushing!</p>
-              )}
+              {/* Breakdown */}
+              <div className="mt-3 space-y-1 text-sm text-gray-700">
+                <div className="flex items-center gap-3">
+                  <span className="inline-flex items-center gap-1">
+                    <Clock className="w-4 h-4 text-blue-600" /> Active: <strong>{user.active_targets ?? 0}</strong>
+                  </span>
+                  <span className="inline-flex items-center gap-1">
+                    <CheckCircle className="w-4 h-4 text-green-600" /> Succeeded: <strong>{user.completed_targets ?? 0}</strong>
+                  </span>
+                  <span className="inline-flex items-center gap-1">
+                    <XCircle className="w-4 h-4 text-gray-600" /> Failed: <strong>{user.failed_targets ?? 0}</strong>
+                  </span>
+                </div>
+                {commitmentPercentage !== null && (
+                  <div className="flex items-center gap-2 text-xs text-gray-600">
+                    <ProgressIcon className="w-3 h-3 text-orange-600" />
+                    Commitment: <span className="font-medium text-gray-800">{commitmentPercentage}%</span> last 30 days
+                  </div>
+                )}
+              </div>
             </div>
             <Award className="w-10 h-10 text-orange-400" />
           </div>
@@ -284,7 +314,6 @@ function Dashboard() {
                 dot={{ fill: '#0ea5e9', r: 4 }}
                 activeDot={{ r: 6 }}
               />
-              {/* Brush for zoom and pan */}
               {chartData.length > 10 && (
                 <Brush 
                   dataKey="date" 
@@ -338,18 +367,13 @@ function Dashboard() {
                       {format(new Date(weight.date_of_measurement), 'MMMM dd, yyyy')}
                     </p>
                   </div>
-                  {weight.notes && (
-                    <p className="text-xs text-gray-400 italic max-w-xs truncate">
-                      {weight.notes}
-                    </p>
-                  )}
                 </div>
               ))}
             </div>
           )}
         </div>
 
-        {/* Active Targets */}
+        {/* Active Targets - ENHANCED */}
         <div className="card">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xl font-bold text-gray-800">Active Goals</h2>
@@ -375,36 +399,81 @@ function Dashboard() {
           ) : (
             <div className="space-y-4">
               {active_targets.map((target) => {
-                const currentWeight = stats.current_weight || 0;
-                const targetWeight = parseFloat(target.target_weight);
-                const startWeight = parseFloat(target.starting_weight) || currentWeight;
-                const totalChange = targetWeight - startWeight;
-                const currentChange = currentWeight - startWeight;
-                const progress = totalChange !== 0 
-                  ? Math.min(100, Math.max(0, (currentChange / totalChange) * 100))
-                  : 0;
-
+                const progress = target.progress_percentage || 0;
+                const isOnTrack = target.days_remaining > 0;
+                const daysText = Math.abs(target.days_remaining);
+                
                 return (
-                  <div key={target.id} className="p-4 bg-gray-50 rounded-lg">
-                    <div className="flex items-start justify-between mb-2">
-                      <div>
-                        <p className="font-medium text-gray-800">
-                          Target: {target.target_weight} kg
-                        </p>
-                        <p className="text-sm text-gray-500">
-                          Due: {format(new Date(target.date_of_target), 'MMM dd, yyyy')}
+                  <div key={target.id} className="p-4 bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg border border-gray-200">
+                    {/* Target Header */}
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <Target className="w-5 h-5 text-primary-600" />
+                          <p className="font-bold text-gray-800 text-lg">
+                            {target.target_weight} kg
+                          </p>
+                        </div>
+                        <p className="text-sm text-gray-600 mt-1">
+                          Target: {format(new Date(target.date_of_target), 'MMM dd, yyyy')}
                         </p>
                       </div>
-                      <span className="text-sm font-medium text-primary-600">
-                        {progress.toFixed(0)}%
-                      </span>
+                      <div className="text-right">
+                        <span className={`text-2xl font-bold ${progress >= 100 ? 'text-green-600' : 'text-primary-600'}`}>
+                          {progress.toFixed(0)}%
+                        </span>
+                      </div>
                     </div>
-                    <div className="w-full bg-gray-200 rounded-full h-2">
+
+                    {/* Progress Bar */}
+                    <div className="w-full bg-gray-200 rounded-full h-3 mb-3">
                       <div 
-                        className="bg-primary-600 h-2 rounded-full transition-all duration-300"
-                        style={{ width: `${progress}%` }}
+                        className={`h-3 rounded-full transition-all duration-500 ${
+                          progress >= 100 ? 'bg-green-500' : 'bg-primary-600'
+                        }`}
+                        style={{ width: `${Math.min(progress, 100)}%` }}
                       />
                     </div>
+
+                    {/* Progress Details */}
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      {/* Weight to Lose */}
+                      <div className="flex items-center gap-2">
+                        <Scale className="w-4 h-4 text-gray-500" />
+                        <div>
+                          <p className="text-gray-500 text-xs">To Go</p>
+                          <p className="font-semibold text-gray-700">
+                            {Math.abs(parseFloat(target.weight_to_lose || 0)).toFixed(1)} kg
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Days Remaining */}
+                      <div className="flex items-center gap-2">
+                        <Clock className={`w-4 h-4 ${isOnTrack ? 'text-green-500' : 'text-orange-500'}`} />
+                        <div>
+                          <p className="text-gray-500 text-xs">
+                            {isOnTrack ? 'Remaining' : 'Overdue'}
+                          </p>
+                          <p className={`font-semibold ${isOnTrack ? 'text-green-700' : 'text-orange-700'}`}>
+                            {daysText} days
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Estimated Completion (if available) */}
+                    {target.estimated_completion && (
+                      <div className="mt-3 pt-3 border-t border-gray-200">
+                        <div className="flex items-center gap-2 text-sm">
+                          <ProgressIcon className="w-4 h-4 text-blue-500" />
+                          <span className="text-gray-600">Est. completion:</span>
+                          <span className="font-medium text-blue-700">
+                            {format(new Date(target.estimated_completion), 'MMM dd, yyyy')}
+                          </span>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -413,11 +482,11 @@ function Dashboard() {
         </div>
       </div>
 
-      {/* Average Weekly Change */}
-      {stats.average_weekly_change && (
+      {/* Average Weekly Change - UPDATED */}
+      {stats.average_weekly_change !== null && stats.average_weekly_change !== undefined ? (
         <div className="card bg-gradient-to-br from-indigo-50 to-indigo-100 border-indigo-200">
           <div className="text-center">
-            <p className="text-sm text-indigo-600 font-medium mb-2">Average Weekly Progress</p>
+            <p className="text-sm text-indigo-600 font-medium mb-2">Average Weekly Progress (Last 5-6 Weeks)</p>
             <div className="flex items-center justify-center gap-2">
               {stats.average_weekly_change < 0 ? (
                 <TrendingDown className="w-8 h-8 text-green-600" />
@@ -435,6 +504,16 @@ function Dashboard() {
                 {stats.average_weekly_change === 0 && " Consistency is key! 🔥"}
               </p>
             </div>
+          </div>
+        </div>
+      ) : (
+        <div className="card bg-gradient-to-br from-gray-50 to-gray-100 border-gray-200">
+          <div className="text-center py-6">
+            <Calendar className="w-12 h-12 mx-auto mb-3 text-gray-400" />
+            <p className="text-gray-600 font-medium">Not enough data for weekly average</p>
+            <p className="text-sm text-gray-500 mt-2">
+              We need at least 2 weeks of weight entries to calculate your average weekly progress
+            </p>
           </div>
         </div>
       )}

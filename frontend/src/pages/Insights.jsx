@@ -127,12 +127,7 @@ function Insights() {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
         <TrendSlopeCard summary={summary} />
         <BMITrendSlopeCard summary={summary} dashboard={dashboard} />
-        <KpiCard
-          label="Volatility (kg/day)"
-          value={summary?.volatility_kg != null ? summary.volatility_kg.toFixed(2) : '--'}
-          info="Std dev of daily changes over the same window. Higher = more day-to-day noise."
-          subtitle={volRange}
-        />
+        <VolatilityCard summary={summary} />
         <KpiCard
           label="Adherence (entries/week)"
           value={summary ? summary.adherence.entries_per_week.toFixed(2) : '--'}
@@ -587,6 +582,34 @@ function BMITrendSlopeCard({ summary, dashboard }) {
         <div>Range: {start} - {end}</div>
         <div>Starting data point: {start} ({startBMI})</div>
         <div>Last data point: {end} ({endBMI})</div>
+      </div>
+    </div>
+  );
+}
+
+function VolatilityCard({ summary }) {
+  const has = summary && summary.volatility_window_start && summary.volatility_window_end;
+  const start = has ? format(new Date(summary.volatility_window_start), 'yyyy-MM-dd') : '--';
+  const end = has ? format(new Date(summary.volatility_window_end), 'yyyy-MM-dd') : '--';
+  const sigmaD = summary?.volatility_kg != null ? summary.volatility_kg : null;
+  const day = sigmaD != null ? sigmaD.toFixed(3) : '--';
+  const week = sigmaD != null ? (sigmaD * Math.sqrt(7)).toFixed(2) : '--';
+  const month = sigmaD != null ? (sigmaD * Math.sqrt(30)).toFixed(2) : '--';
+  const n = summary?.volatility_count ?? undefined;
+  return (
+    <div className="stat-card bg-gradient-to-br from-amber-50 to-amber-100 border-amber-200">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-gray-700">Volatility (Weight)</p>
+        <span title="Std dev of daily weight change computed over the trend window; scaled to week/month by sqrt(time)." className="ml-2 inline-flex items-center justify-center w-5 h-5 text-[10px] font-semibold rounded-full border border-gray-300 text-gray-600 bg-white cursor-help">i</span>
+      </div>
+      <div className="mt-1 text-gray-900">
+        <div className="text-sm">{day} kg/day</div>
+        <div className="text-lg font-semibold">{week} kg/week</div>
+        <div className="text-sm">{month} kg/month</div>
+      </div>
+      <div className="mt-2 text-xs text-gray-600">
+        <div>Range: {start} - {end}</div>
+        {n != null && <div>Daily deltas used: {n}</div>}
       </div>
     </div>
   );

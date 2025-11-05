@@ -25,6 +25,28 @@ function Insights() {
     queryFn: async () => (await insightsAPI.getForecast(metric, 60)).data,
   });
 
+  // Insights data from backend
+  const { data: seasonality } = useQuery({
+    queryKey: ['insights','seasonality'],
+    queryFn: async () => (await insightsAPI.getSeasonality()).data,
+  });
+  const { data: distributions } = useQuery({
+    queryKey: ['insights','distributions'],
+    queryFn: async () => (await insightsAPI.getDistributions(20)).data,
+  });
+  const { data: composition } = useQuery({
+    queryKey: ['insights','composition'],
+    queryFn: async () => (await insightsAPI.getComposition()).data,
+  });
+  const { data: goalAnalytics } = useQuery({
+    queryKey: ['insights','goal-analytics'],
+    queryFn: async () => (await insightsAPI.getGoalAnalytics()).data,
+  });
+  const { data: calendar } = useQuery({
+    queryKey: ['insights','calendar'],
+    queryFn: async () => (await insightsAPI.getCalendar(365)).data,
+  });
+
   const history = dashboard?.weight_trend || [];
   const user = dashboard?.user;
 
@@ -72,48 +94,23 @@ function Insights() {
 
   const currentUnits = metric === 'weight' ? 'kg' : '';
 
-  // Seasonality (weekday/month) from history
-  const { weekdayData, monthData, changes, changes30d } = useMemo(() => {
-    const points = (history || []).map(p => ({ d: new Date(p.date), w: parseFloat(p.weight) }))
-      .sort((a, b) => a.d - b.d);
-    const deltas = [];
-    for (let i = 1; i < points.length; i++) {
-      const days = differenceInCalendarDays(points[i].d, points[i-1].d);
-      if (days > 0) {
-        const dw = (points[i].w - points[i-1].w) / days; // normalize to per-day change across gaps
-        // attribute to the later date's weekday for simplicity
-        deltas.push({ date: points[i].d, change: dw });
-      }
-    }
-    // Weekday averages
-    const accW = Array.from({ length: 7 }, () => ({ sum: 0, n: 0 }));
-    deltas.forEach(({ date, change }) => {
-      const wd = date.getDay();
-      accW[wd].sum += change;
-      accW[wd].n += 1;
-    });
+  // Seasonality data (fallback labels and mapping)
+  const weekdayData = useMemo(() => {
     const labels = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-    const weekdayData = accW.map((v, i) => ({ name: labels[i], value: v.n ? parseFloat((v.sum / v.n).toFixed(3)) : 0 }));
-    // Month averages
-    const accM = Array.from({ length: 12 }, () => ({ sum: 0, n: 0 }));
-    deltas.forEach(({ date, change }) => {
-      const m = date.getMonth();
-      accM[m].sum += change;
-      accM[m].n += 1;
-    });
+    const arr = seasonality?.weekday_avg || [];
+    return labels.map((name, i) => ({ name, value: arr[i] ?? 0 }));
+  }, [seasonality]);
+  const monthData = useMemo(() => {
     const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    const monthData = accM.map((v, i) => ({ name: months[i], value: v.n ? parseFloat((v.sum / v.n).toFixed(3)) : 0 }));
-
-    // Changes arrays for distributions
-    const changes = deltas.map(d => d.change);
-    const recentCut = addDays(new Date(), -30);
-    const changes30d = deltas.filter(d => d.date >= recentCut).map(d => d.change);
-    return { weekdayData, monthData, changes, changes30d };
-  }, [history]);
-
-  // Histogram for changes
-  const histData = useMemo(() => histogram(changes, 20), [changes]);
-  const recentStd = stddev(changes30d);
+    const arr = seasonality?.month_avg || [];
+    return months.map((name, i) => ({ name, value: arr[i] ?? 0 }));
+  }, [seasonality]);
+  const histData = useMemo(() => {
+    const bins = distributions?.daily_change_hist || [];
+    return bins.map(b => ({ bin: `${b.bin_start.toFixed(2)}`, count: b.count }));
+  }, [distributions]);
+  const recentStd = distributions?.recent_std ?? 0;
+  const outlierCount30d = distributions?.outliers_last_30d ?? 0;
 
   return (
     <div>
@@ -123,22 +120,26 @@ function Insights() {
 
       {/* Top Summary Strip */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-        <div className="stat-card">
-          <p className="text-sm text-gray-600">Trend Slope (per week)</p>
-          <p className="text-2xl font-bold">{summary ? summary.trend_slope_kg_per_week.toFixed(2) : '--'} kg</p>
-        </div>
-        <div className="stat-card">
-          <p className="text-sm text-gray-600">Fit (R²)</p>
-          <p className="text-2xl font-bold">{summary ? summary.r2.toFixed(2) : '--'}</p>
-        </div>
-        <div className="stat-card">
-          <p className="text-sm text-gray-600">Volatility</p>
-          <p className="text-2xl font-bold">{summary?.volatility_kg != null ? `${summary.volatility_kg.toFixed(2)} kg` : '--'}</p>
-        </div>
-        <div className="stat-card">
-          <p className="text-sm text-gray-600">Adherence</p>
-          <p className="text-2xl font-bold">{summary ? `${summary.adherence.entries_per_week.toFixed(2)} / wk` : '--'}</p>
-        </div>
+        <KpiCard
+          label="Trend Slope (per week)"
+          value={summary ? `${summary.trend_slope_kg_per_week.toFixed(2)} kg` : '--'}
+          info="Average weekly change from a linear trend line of your history. Negative = weight loss per week."
+        />
+        <KpiCard
+          label="Fit (R²)"
+          value={summary ? summary.r2.toFixed(2) : '--'}
+          info="How well a straight line fits your past data (0–1). Higher = more consistent trend."
+        />
+        <KpiCard
+          label="Volatility"
+          value={summary?.volatility_kg != null ? `${summary.volatility_kg.toFixed(2)} kg` : '--'}
+          info="Standard deviation of daily changes. Higher = more day‑to‑day noise."
+        />
+        <KpiCard
+          label="Adherence"
+          value={summary ? `${summary.adherence.entries_per_week.toFixed(2)} / wk` : '--'}
+          info="Logging consistency: entries per week. See details in the Diagnostics card."
+        />
       </div>
 
       {/* Main layout: left (trends) and right (diagnostics/goals/what-if) */}
@@ -169,6 +170,9 @@ function Insights() {
                   <XAxis dataKey="dateLabel" tick={{ fontSize: 12 }} minTickGap={24} />
                   <YAxis tick={{ fontSize: 12 }} domain={['auto','auto']} />
                   <Tooltip formatter={(v) => `${v} ${currentUnits}`} labelFormatter={(l) => l} />
+                  {/* Forecast confidence band */}
+                  <Area type="monotone" dataKey="upper" stroke="#60a5fa" fill="#93c5fd" fillOpacity={0.25} isAnimationActive={false} />
+                  <Area type="monotone" dataKey="lower" stroke="#ffffff00" fill="#ffffff" fillOpacity={1} isAnimationActive={false} />
                   <Line type="monotone" dataKey="actual" stroke="#10b981" strokeWidth={2} dot={false} name="Actual" />
                   <Line type="monotone" dataKey="ma7" stroke="#f59e0b" strokeWidth={1.5} dot={false} name="7d MA" />
                   <Line type="monotone" dataKey="ma30" stroke="#ef4444" strokeWidth={1.5} dot={false} name="30d MA" />
@@ -210,13 +214,13 @@ function Insights() {
           </div>
 
           {/* Composition Trends */}
-          <CompositionSection history={history} />
+          <CompositionSection composition={composition} />
 
           {/* Calendar Heatmap - Placeholder */}
           <div className="card">
             <h2 className="text-lg font-semibold text-gray-800 mb-2">Calendar Heatmap</h2>
             <p className="text-sm text-gray-600 mb-3">Density of weigh-ins by date</p>
-            <PlaceholderHeatmap />
+            <PlaceholderHeatmap calendar={calendar} />
           </div>
 
           {/* Distributions */}
@@ -253,13 +257,13 @@ function Insights() {
             <p className="text-sm text-gray-600">Diagnostics</p>
             <ul className="mt-2 text-sm text-gray-700 list-disc list-inside">
               <li>Plateau: {summary?.plateau_flag ? 'Possible' : 'No'}</li>
-              <li>Outliers (last 30d): {countOutliers(changes30d)} points</li>
+              <li>Outliers (last 30d): {outlierCount30d} points</li>
               <li>Regress‑to‑mean: heuristic coming soon</li>
             </ul>
           </div>
 
           {/* Goal Analytics - Placeholder */}
-          <GoalAnalyticsSection dashboard={dashboard} history={history} />
+          <GoalAnalyticsSection goalAnalytics={goalAnalytics} />
 
           {/* What‑If Simulator - Placeholder */}
           <WhatIfSection dashboard={dashboard} />
@@ -278,21 +282,37 @@ function PlaceholderChart({ label = 'Chart placeholder', height = 180 }) {
   );
 }
 
-function PlaceholderHeatmap() {
-  // Render a simple month grid placeholder
-  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function PlaceholderHeatmap({ calendar }) {
+  // Render last 12 months by month blocks using calendar.days
+  const days = calendar?.days || [];
+  if (!days.length) {
+    return <div className="w-full border border-dashed border-gray-300 rounded-md bg-gray-50/50 p-4 text-sm text-gray-500">No data yet</div>;
+  }
+  // Group by month
+  const groups = {};
+  for (const cell of days) {
+    const d = new Date(cell.date);
+    const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    (groups[key] ||= []).push({ d, count: cell.count });
+  }
+  const keys = Object.keys(groups).sort();
+  const palette = (c) => c === 0 ? 'bg-gray-200' : c === 1 ? 'bg-emerald-200' : c === 2 ? 'bg-emerald-300' : 'bg-emerald-500';
   return (
-    <div className="grid grid-cols-6 gap-3">
-      {months.map((m, i) => (
-        <div key={i} className="border border-dashed border-gray-300 rounded-md p-2 bg-gray-50/50">
-          <div className="text-xs text-gray-600 mb-1">{m}</div>
-          <div className="grid grid-cols-7 gap-1">
-            {Array.from({ length: 28 }).map((_, idx) => (
-              <div key={idx} className="h-3 w-3 rounded-sm bg-gray-200" />
-            ))}
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+      {keys.map((k) => {
+        const arr = groups[k].sort((a,b)=>a.d-b.d);
+        const label = `${arr[0].d.toLocaleString('default', { month: 'short' })} ${arr[0].d.getFullYear()}`;
+        return (
+          <div key={k} className="border rounded-md p-2 bg-white">
+            <div className="text-xs text-gray-600 mb-1">{label}</div>
+            <div className="grid grid-cols-7 gap-1">
+              {arr.map((x, idx) => (
+                <div key={idx} className={`h-3 w-3 rounded-sm ${palette(x.count)}`} title={`${format(x.d,'yyyy-MM-dd')}: ${x.count} entries`} />
+              ))}
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -375,21 +395,12 @@ function computeRecentSlope(history, user, metric = 'weight') {
 }
 
 // ----- Sections -----
-function CompositionSection({ history }) {
-  // Build fat and lean mass time series
-  const series = (history || []).map(pt => {
-    const d = new Date(pt.date);
-    const weight = parseFloat(pt.weight);
-    const bf = pt.body_fat_percentage != null ? parseFloat(pt.body_fat_percentage) : null;
-    const muscle = pt.muscle_mass != null ? parseFloat(pt.muscle_mass) : null;
-    const fatMass = bf != null ? (weight * bf / 100) : null;
-    const leanMass = muscle != null ? muscle : (fatMass != null ? weight - fatMass : null);
-    return {
-      dateLabel: format(d, 'yyyy-MM-dd'),
-      fat: fatMass != null ? parseFloat(fatMass.toFixed(2)) : null,
-      lean: leanMass != null ? parseFloat(leanMass.toFixed(2)) : null,
-    };
-  }).filter(p => p.fat != null && p.lean != null);
+function CompositionSection({ composition }) {
+  const series = (composition?.points || []).map(p => ({
+    dateLabel: format(new Date(p.date), 'yyyy-MM-dd'),
+    fat: p.fat_mass_est,
+    lean: p.lean_mass_est,
+  })).filter(p => p.fat != null && p.lean != null);
 
   return (
     <div className="card">
@@ -412,36 +423,8 @@ function CompositionSection({ history }) {
 }
 
 function GoalAnalyticsSection({ dashboard, history }) {
-  const targets = dashboard?.active_targets || [];
-  const currentWeight = dashboard?.stats?.current_weight != null ? parseFloat(dashboard.stats.current_weight) : null;
-  const recentSlope = computeRecentSlope(history, dashboard?.user, 'weight');
-
-  if (!targets.length || currentWeight == null) {
-    return (
-      <div className="stat-card">
-        <p className="text-sm text-gray-600">Goal Analytics</p>
-        <p className="mt-2 text-sm text-gray-700">No active goals or insufficient data.</p>
-      </div>
-    );
-  }
-
-  const rows = targets.map(t => {
-    const targetWeight = parseFloat(t.target_weight);
-    const daysRemaining = Math.max(0, Math.round((new Date(t.date_of_target) - new Date()) / (1000*3600*24)));
-    const weeksRemaining = Math.max(0.1, daysRemaining / 7);
-    const requiredSlope = (targetWeight - currentWeight) / weeksRemaining; // kg/week
-    const sameSign = (requiredSlope === 0) ? true : (requiredSlope > 0) === (recentSlope > 0);
-    const ratio = Math.min(1, Math.abs(recentSlope) / (Math.abs(requiredSlope) + 1e-6));
-    const base = sameSign ? 0.6 : 0.2;
-    const score = Math.max(0, Math.min(100, Math.round(100 * (base + 0.4 * ratio))));
-    return {
-      id: t.id,
-      goal: `${targetWeight.toFixed(1)} kg by ${format(new Date(t.date_of_target),'yyyy-MM-dd')}`,
-      requiredSlope: requiredSlope,
-      recentSlope: recentSlope,
-      score,
-    };
-  });
+function GoalAnalyticsSection({ goalAnalytics }) {
+  const rows = goalAnalytics?.rows || [];
 
   return (
     <div className="stat-card">
@@ -453,16 +436,23 @@ function GoalAnalyticsSection({ dashboard, history }) {
               <th className="text-left pr-4">Goal</th>
               <th className="text-right pr-4">Required Slope</th>
               <th className="text-right pr-4">Recent Slope</th>
-              <th className="text-right">Prob. Score</th>
+              <th className="text-right pr-4">Prob. Score</th>
+              <th className="text-right">ETA (Cons–Opt)</th>
             </tr>
           </thead>
           <tbody>
+            {rows.length === 0 && (
+              <tr>
+                <td className="py-2 text-gray-700" colSpan={5}>No active goals or insufficient data.</td>
+              </tr>
+            )}
             {rows.map(r => (
               <tr key={r.id} className="border-t">
-                <td className="py-1 text-gray-700">{r.goal}</td>
-                <td className="py-1 text-right">{r.requiredSlope.toFixed(2)} kg/wk</td>
-                <td className="py-1 text-right">{r.recentSlope.toFixed(2)} kg/wk</td>
-                <td className="py-1 text-right">{r.score}</td>
+                <td className="py-1 text-gray-700">{r.goal_label}</td>
+                <td className="py-1 text-right">{r.required_slope_kg_per_week.toFixed(2)} kg/wk</td>
+                <td className="py-1 text-right">{r.recent_slope_kg_per_week.toFixed(2)} kg/wk</td>
+                <td className="py-1 text-right">{r.probability_score}</td>
+                <td className="py-1 text-right">{r.eta_conservative || r.eta_optimistic ? `${r.eta_conservative ?? '—'} – ${r.eta_optimistic ?? '—'}` : '—'}</td>
               </tr>
             ))}
           </tbody>
@@ -513,3 +503,16 @@ function WhatIfSection({ dashboard }) {
 }
 
 export default Insights;
+
+// ----- UI bits -----
+function KpiCard({ label, value, info }) {
+  return (
+    <div className="stat-card">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-gray-700">{label}</p>
+        <span title={info} className="ml-2 inline-flex items-center justify-center w-5 h-5 text-[10px] font-semibold rounded-full border border-gray-300 text-gray-600 bg-white cursor-help">i</span>
+      </div>
+      <p className="text-2xl font-bold mt-1 text-gray-900">{value}</p>
+    </div>
+  );
+}

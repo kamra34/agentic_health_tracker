@@ -98,6 +98,11 @@ export const insightsAPI = {
   getSummary: () => api.get('/api/insights/summary'),
   getForecast: (metric = 'weight', horizon = 60) =>
     api.get('/api/insights/forecast', { params: { metric, horizon } }),
+  getComposition: () => api.get('/api/insights/composition'),
+  getDistributions: (bins = 20) => api.get('/api/insights/distributions', { params: { bins } }),
+  getSeasonality: () => api.get('/api/insights/seasonality'),
+  getGoalAnalytics: () => api.get('/api/insights/goal-analytics'),
+  getCalendar: (days = 365) => api.get('/api/insights/calendar', { params: { days } }),
 };
 
 export default api;

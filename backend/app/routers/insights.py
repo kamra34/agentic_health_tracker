@@ -5,8 +5,8 @@ Quick Wins:
 - GET /api/insights/summary: trend slope, R2, volatility, adherence, milestones, plateau
 - GET /api/insights/forecast: simple exponential smoothing with band
 """
-from datetime import date, timedelta
-from typing import List, Optional
+from datetime import date, timedelta, datetime
+from typing import List, Optional, Dict, Tuple
 from statistics import mean, pstdev
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -128,12 +128,42 @@ class ForecastResponse(BaseModel):
     points: List[ForecastPoint]
 
 
+# ---------------- Simple Cache ----------------
+_CACHE_TTL_SECONDS = 300
+_cache: Dict[str, Dict[int, Tuple[float, object]]] = {
+    "summary": {},
+    "forecast": {},
+    "composition": {},
+    "distributions": {},
+    "seasonality": {},
+    "goal_analytics": {},
+    "calendar": {},
+}
+
+
+def _cache_get(bucket: str, user_id: int):
+    rec = _cache.get(bucket, {}).get(user_id)
+    if not rec:
+        return None
+    ts, data = rec
+    if (datetime.utcnow().timestamp() - ts) > _CACHE_TTL_SECONDS:
+        return None
+    return data
+
+
+def _cache_set(bucket: str, user_id: int, data: object):
+    _cache.setdefault(bucket, {})[user_id] = (datetime.utcnow().timestamp(), data)
+
+
 # ---------------- Endpoints ----------------
 @router.get("/summary", response_model=SummaryResponse)
 def get_summary(
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    cached = _cache_get("summary", current_user.id)
+    if cached:
+        return cached
     weights = (
         db.query(models.Weight)
         .filter(models.Weight.user_id == current_user.id)
@@ -223,7 +253,7 @@ def get_summary(
         rng = max(recent_vals) - min(recent_vals)
         plateau_flag = (rng <= 0.2) and (abs(slope_per_day) <= 0.005)
 
-    return SummaryResponse(
+    resp = SummaryResponse(
         trend_slope_kg_per_week=round(slope_per_week, 3),
         r2=round(float(r2), 3),
         volatility_kg=vol,
@@ -241,6 +271,8 @@ def get_summary(
             last_new_high=last_new_high,
         ),
     )
+    _cache_set("summary", current_user.id, resp)
+    return resp
 
 
 @router.get("/forecast", response_model=ForecastResponse)
@@ -251,6 +283,9 @@ def get_forecast(
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    cached = _cache_get("forecast", current_user.id)
+    if cached and cached.metric == metric and cached.horizon_days == horizon:
+        return cached
     weights = (
         db.query(models.Weight)
         .filter(models.Weight.user_id == current_user.id)
@@ -282,10 +317,291 @@ def get_forecast(
             ForecastPoint(date=d, forecast=round(float(f), 2), lower=round(float(f - band), 2), upper=round(float(f + band), 2))
         )
 
-    return ForecastResponse(
+    resp = ForecastResponse(
         metric=metric,
         horizon_days=horizon,
         last_observation_date=last_date,
         points=points,
     )
+    _cache_set("forecast", current_user.id, resp)
+    return resp
 
+
+# ---------------- Additional Endpoints ----------------
+class CompositionPoint(BaseModel):
+    date: date
+    weight: float
+    fat_mass_est: Optional[float] = None
+    lean_mass_est: Optional[float] = None
+
+
+class CompositionResponse(BaseModel):
+    points: List[CompositionPoint]
+
+
+@router.get("/composition", response_model=CompositionResponse)
+def get_composition(
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    cached = _cache_get("composition", current_user.id)
+    if cached:
+        return cached
+    weights = (
+        db.query(models.Weight)
+        .filter(models.Weight.user_id == current_user.id)
+        .order_by(models.Weight.date_of_measurement)
+        .all()
+    )
+    out: List[CompositionPoint] = []
+    for w in weights:
+        weight = float(w.weight)
+        bf = float(w.body_fat_percentage) if getattr(w, 'body_fat_percentage', None) is not None else None
+        muscle = float(w.muscle_mass) if getattr(w, 'muscle_mass', None) is not None else None
+        fat_mass = (weight * bf / 100.0) if bf is not None else None
+        lean_mass = muscle if muscle is not None else (weight - fat_mass if fat_mass is not None else None)
+        out.append(CompositionPoint(
+            date=w.date_of_measurement,
+            weight=round(weight, 2),
+            fat_mass_est=round(fat_mass, 2) if fat_mass is not None else None,
+            lean_mass_est=round(lean_mass, 2) if lean_mass is not None else None,
+        ))
+    resp = CompositionResponse(points=out)
+    _cache_set("composition", current_user.id, resp)
+    return resp
+
+
+class HistogramBin(BaseModel):
+    bin_start: float
+    bin_end: float
+    count: int
+
+
+class DistributionsResponse(BaseModel):
+    daily_change_hist: List[HistogramBin]
+    outliers_last_30d: int
+    recent_std: float
+
+
+@router.get("/distributions", response_model=DistributionsResponse)
+def get_distributions(
+    bins: int = Query(20, ge=5, le=100),
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    cached = _cache_get("distributions", current_user.id)
+    if cached and len(cached.daily_change_hist) == bins:
+        return cached
+    weights = (
+        db.query(models.Weight)
+        .filter(models.Weight.user_id == current_user.id)
+        .order_by(models.Weight.date_of_measurement)
+        .all()
+    )
+    series = _to_series(weights)
+    # Build per-day normalized deltas
+    deltas: List[float] = []
+    dates: List[date] = []
+    for (d1, v1), (d2, v2) in zip(series[:-1], series[1:]):
+        gap = (d2 - d1).days
+        if gap > 0:
+            deltas.append((v2 - v1) / gap)
+            dates.append(d2)
+    if not deltas:
+        return DistributionsResponse(daily_change_hist=[], outliers_last_30d=0, recent_std=0.0)
+    mn, mx = min(deltas), max(deltas)
+    if mn == mx:
+        hist = [HistogramBin(bin_start=mn, bin_end=mn, count=len(deltas))]
+    else:
+        width = (mx - mn) / bins
+        counts = [0] * bins
+        for v in deltas:
+            idx = int((v - mn) / width)
+            if idx >= bins:
+                idx = bins - 1
+            counts[idx] += 1
+        hist = [HistogramBin(bin_start=mn + i * width, bin_end=mn + (i + 1) * width, count=c) for i, c in enumerate(counts)]
+    # Recent outliers (last 30 days, > 3 sigma)
+    cutoff = date.today() - timedelta(days=30)
+    recent = [v for v, d in zip(deltas, dates) if d >= cutoff]
+    mu = mean(recent) if recent else 0.0
+    sd = pstdev(recent) if len(recent) >= 2 else 0.0
+    outliers = sum(1 for v in recent if sd > 0 and abs(v - mu) > 3 * sd)
+    resp = DistributionsResponse(daily_change_hist=hist, outliers_last_30d=outliers, recent_std=round(sd, 4))
+    _cache_set("distributions", current_user.id, resp)
+    return resp
+
+
+class SeasonalityResponse(BaseModel):
+    weekday_avg: List[float]  # len 7, Sun..Sat
+    month_avg: List[float]    # len 12, Jan..Dec
+
+
+@router.get("/seasonality", response_model=SeasonalityResponse)
+def get_seasonality(
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    cached = _cache_get("seasonality", current_user.id)
+    if cached:
+        return cached
+    weights = (
+        db.query(models.Weight)
+        .filter(models.Weight.user_id == current_user.id)
+        .order_by(models.Weight.date_of_measurement)
+        .all()
+    )
+    series = _to_series(weights)
+    deltas: List[Tuple[date, float]] = []
+    for (d1, v1), (d2, v2) in zip(series[:-1], series[1:]):
+        gap = (d2 - d1).days
+        if gap > 0:
+            deltas.append((d2, (v2 - v1) / gap))
+    accW = [(0.0, 0) for _ in range(7)]  # sum, n
+    accW = [list(x) for x in accW]
+    for d, ch in deltas:
+        wd = d.weekday()  # 0 Mon..6 Sun
+        # We want Sun..Sat ordering; convert
+        sun_first = (wd + 1) % 7
+        accW[sun_first][0] += ch
+        accW[sun_first][1] += 1
+    weekday_avg = [round((s / n), 4) if n else 0.0 for s, n in accW]
+    accM = [(0.0, 0) for _ in range(12)]
+    accM = [list(x) for x in accM]
+    for d, ch in deltas:
+        m = d.month - 1
+        accM[m][0] += ch
+        accM[m][1] += 1
+    month_avg = [round((s / n), 4) if n else 0.0 for s, n in accM]
+    resp = SeasonalityResponse(weekday_avg=weekday_avg, month_avg=month_avg)
+    _cache_set("seasonality", current_user.id, resp)
+    return resp
+
+
+class GoalRow(BaseModel):
+    id: int
+    goal_label: str
+    required_slope_kg_per_week: float
+    recent_slope_kg_per_week: float
+    probability_score: int
+    eta_conservative: Optional[date] = None
+    eta_optimistic: Optional[date] = None
+
+
+class GoalAnalyticsResponse(BaseModel):
+    rows: List[GoalRow]
+
+
+@router.get("/goal-analytics", response_model=GoalAnalyticsResponse)
+def get_goal_analytics(
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    cached = _cache_get("goal_analytics", current_user.id)
+    if cached:
+        return cached
+    # Collect data
+    weights = (
+        db.query(models.Weight)
+        .filter(models.Weight.user_id == current_user.id)
+        .order_by(models.Weight.date_of_measurement)
+        .all()
+    )
+    series = _to_series(weights)
+    if not series:
+        return GoalAnalyticsResponse(rows=[])
+    dates, vals = zip(*series)
+    # Recent slope: last 8 weeks OLS
+    cutoff = date.today() - timedelta(days=56)
+    xs = []
+    ys = []
+    base = None
+    for d, v in series:
+        if d >= cutoff:
+            if base is None:
+                base = d
+            xs.append((d - base).days)
+            ys.append(v)
+    if len(xs) < 2:
+        xs = list(range(len(vals)))
+        ys = list(vals)
+    slope_day, _, _ = _linear_regression(xs, ys)
+    recent_slope_week = slope_day * 7.0
+
+    current_weight = float(vals[-1])
+    active_targets = db.query(models.TargetWeight).filter(
+        models.TargetWeight.user_id == current_user.id,
+        models.TargetWeight.status == "active"
+    ).all()
+    rows: List[GoalRow] = []
+    for t in active_targets:
+        target_w = float(t.target_weight)
+        days_remaining = max(1, (t.date_of_target - date.today()).days)
+        weeks_remaining = days_remaining / 7.0
+        required = (target_w - current_weight) / weeks_remaining
+        same_sign = (required == 0) or ((required > 0) == (recent_slope_week > 0))
+        ratio = 0.0 if required == 0 else min(1.0, abs(recent_slope_week) / (abs(required) + 1e-6))
+        base_score = 0.6 if same_sign else 0.2
+        score = int(max(0, min(100, round(100 * (base_score + 0.4 * ratio)))))
+        # ETA ranges using conservative/optimistic multipliers
+        delta = target_w - current_weight
+        eta_cons = eta_opt = None
+        if recent_slope_week != 0 and (delta == 0 or (delta > 0) == (recent_slope_week > 0)):
+            cons_rate = max(1e-6, abs(recent_slope_week) * 0.75)
+            opt_rate = max(1e-6, abs(recent_slope_week) * 1.25)
+            weeks_cons = abs(delta) / cons_rate if cons_rate > 0 else None
+            weeks_opt = abs(delta) / opt_rate if opt_rate > 0 else None
+            if weeks_cons is not None:
+                eta_cons = date.today() + timedelta(days=int(round(weeks_cons * 7)))
+            if weeks_opt is not None:
+                eta_opt = date.today() + timedelta(days=int(round(weeks_opt * 7)))
+        rows.append(GoalRow(
+            id=t.id,
+            goal_label=f"{target_w:.1f} kg by {t.date_of_target}",
+            required_slope_kg_per_week=round(required, 3),
+            recent_slope_kg_per_week=round(recent_slope_week, 3),
+            probability_score=score,
+            eta_conservative=eta_cons,
+            eta_optimistic=eta_opt,
+        ))
+    resp = GoalAnalyticsResponse(rows=rows)
+    _cache_set("goal_analytics", current_user.id, resp)
+    return resp
+
+
+class CalendarCell(BaseModel):
+    date: date
+    count: int
+
+
+class CalendarResponse(BaseModel):
+    days: List[CalendarCell]
+
+
+@router.get("/calendar", response_model=CalendarResponse)
+def get_calendar(
+    days: int = Query(365, ge=30, le=730),
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    cached = _cache_get("calendar", current_user.id)
+    if cached and len(cached.days) == days:
+        return cached
+    cutoff = date.today() - timedelta(days=days - 1)
+    weights = (
+        db.query(models.Weight)
+        .filter(models.Weight.user_id == current_user.id, models.Weight.date_of_measurement >= cutoff)
+        .all()
+    )
+    counts: Dict[date, int] = {}
+    for w in weights:
+        d = w.date_of_measurement
+        counts[d] = counts.get(d, 0) + 1
+    out: List[CalendarCell] = []
+    cur = cutoff
+    while cur <= date.today():
+        out.append(CalendarCell(date=cur, count=counts.get(cur, 0)))
+        cur = cur + timedelta(days=1)
+    resp = CalendarResponse(days=out)
+    _cache_set("calendar", current_user.id, resp)
+    return resp

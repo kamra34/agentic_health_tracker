@@ -76,34 +76,36 @@ def calculate_target_progress(
     """
     Calculate detailed progress information for a target.
     """
+    # Normalize numeric types to float for arithmetic
+    cw = float(current_weight) if current_weight is not None else 0.0
     target_weight = float(target.target_weight)
     
     # Get starting weight (weight at target creation date or closest before)
     starting_weight = get_weight_at_date(db, target.user_id, target.created_date)
-    if not starting_weight:
+    if starting_weight is None:
         # Fallback to first weight entry
         first_weight = db.query(models.Weight).filter(
             models.Weight.user_id == target.user_id
         ).order_by(models.Weight.date_of_measurement).first()
-        starting_weight = float(first_weight.weight) if first_weight else current_weight
+        starting_weight = float(first_weight.weight) if first_weight else cw
     
     # Calculate progress
     total_to_lose = target_weight - starting_weight
-    current_lost = current_weight - starting_weight
+    current_lost = cw - starting_weight
     
     if total_to_lose != 0:
         progress_percentage = (current_lost / total_to_lose) * 100
         progress_percentage = max(0, min(100, progress_percentage))  # Clamp between 0-100
     else:
-        progress_percentage = 100 if current_weight == target_weight else 0
+        progress_percentage = 100 if cw == target_weight else 0
     
-    weight_to_lose = current_weight - target_weight
+    weight_to_lose = cw - target_weight
 
     # Determine final_weight depending on status
     # - Active: use current/latest weight
     # - Completed/Cancelled: weight closest to the target date
     if target.status == "active":
-        final_weight_value = current_weight
+        final_weight_value = cw
     else:
         fw = get_weight_at_date(db, target.user_id, target.date_of_target)
         final_weight_value = float(fw) if fw is not None else current_weight
@@ -118,8 +120,8 @@ def calculate_target_progress(
         thirty_days_ago = date.today() - timedelta(days=30)
         weight_30_days_ago = get_weight_at_date(db, target.user_id, thirty_days_ago)
         
-        if weight_30_days_ago and weight_30_days_ago != current_weight:
-            daily_rate = (weight_30_days_ago - current_weight) / 30
+        if weight_30_days_ago and weight_30_days_ago != cw:
+            daily_rate = (weight_30_days_ago - cw) / 30
             if daily_rate > 0:
                 days_needed = weight_to_lose / daily_rate
                 estimated_completion = date.today() + timedelta(days=int(days_needed))
@@ -132,7 +134,7 @@ def calculate_target_progress(
         created_date=target.created_date,
         status=target.status,
         starting_weight=Decimal(str(starting_weight)),
-        current_weight=Decimal(str(current_weight)),
+        current_weight=Decimal(str(cw)),
         final_weight=Decimal(str(final_weight_value)),
         weight_to_lose=Decimal(str(weight_to_lose)),
         progress_percentage=round(progress_percentage, 1),
@@ -365,7 +367,8 @@ def get_dashboard(
     
     # Calculate progress for each target
     active_targets = []
-    current_weight = stats.current_weight or 0
+    # Normalize to float for calculations
+    current_weight = float(stats.current_weight) if stats.current_weight is not None else 0.0
     for target in active_targets_raw:
         target_with_progress = calculate_target_progress(current_weight, target, db)
         active_targets.append(target_with_progress)

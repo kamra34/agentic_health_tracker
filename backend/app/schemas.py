@@ -109,8 +109,13 @@ class TargetWeight(TargetWeightBase):
 
 
 class TargetWithProgress(TargetWeight):
-    """Target with progress information."""
+    """Target with detailed progress information."""
+    starting_weight: Optional[Decimal] = None
     current_weight: Optional[Decimal] = None
+    # For UI clarity: the weight considered as the "final" point
+    # - active target: latest/current weight
+    # - completed/cancelled: weight closest to target date
+    final_weight: Optional[Decimal] = None
     weight_to_lose: Optional[Decimal] = None
     progress_percentage: Optional[float] = None
     days_remaining: Optional[int] = None

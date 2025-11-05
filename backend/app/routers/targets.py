@@ -9,6 +9,7 @@ from datetime import date
 
 from ..database import get_db
 from .. import models, schemas
+from .users import calculate_target_progress
 from ..auth import get_current_user
 
 router = APIRouter(prefix="/api/targets", tags=["Targets"])
@@ -40,7 +41,7 @@ def create_target(
     return db_target
 
 
-@router.get("", response_model=List[schemas.TargetWeight])
+@router.get("", response_model=List[schemas.TargetWithProgress])
 def list_targets(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
@@ -63,7 +64,18 @@ def list_targets(
         query = query.filter(models.TargetWeight.status == status_filter)
     
     targets = query.order_by(desc(models.TargetWeight.created_date)).offset(skip).limit(limit).all()
-    return targets
+
+    # Compute enriched progress details per target
+    latest_weight = db.query(models.Weight).filter(
+        models.Weight.user_id == current_user.id
+    ).order_by(desc(models.Weight.date_of_measurement)).first()
+    current_weight = float(latest_weight.weight) if latest_weight else 0
+
+    enriched = [
+        calculate_target_progress(current_weight=current_weight, target=t, db=db)
+        for t in targets
+    ]
+    return enriched
 
 
 @router.get("/active", response_model=List[schemas.TargetWeight])

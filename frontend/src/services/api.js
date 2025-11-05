@@ -82,4 +82,11 @@ export const targetAPI = {
   cancel: (id) => api.post(`/api/targets/${id}/cancel`),
 };
 
+// Admin APIs
+export const adminAPI = {
+  listUsers: () => api.get('/api/admin/users'),
+  setAdmin: (userId, isAdmin) => api.put(`/api/admin/users/${userId}/admin`, null, { params: { is_admin: isAdmin } }),
+  deleteTarget: (targetId) => api.delete(`/api/admin/targets/${targetId}`),
+};
+
 export default api;

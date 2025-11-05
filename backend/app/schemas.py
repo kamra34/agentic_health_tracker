@@ -168,6 +168,9 @@ class WeightStats(BaseModel):
     weekly_change: Optional[float] = None
     monthly_change: Optional[float] = None
     six_month_change: Optional[float] = None
+    # Consistency streaks
+    current_streak: Optional[int] = None
+    longest_streak: Optional[int] = None
 
 
 class WeightTrend(BaseModel):

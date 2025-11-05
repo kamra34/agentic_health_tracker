@@ -337,6 +337,27 @@ def get_my_stats(
     six_months_ago = today - timedelta(days=180)
     weight_six_months_ago = get_weight_at_date(db, current_user.id, six_months_ago)
     six_month_change = round(current_weight - weight_six_months_ago, 1) if weight_six_months_ago else None
+
+    # Calculate streaks (consecutive days with at least one entry)
+    dates_set = {w.date_of_measurement for w in weights}
+    sorted_dates = sorted(dates_set)
+    longest_streak = 0
+    run = 0
+    prev = None
+    for d in sorted_dates:
+        if prev is not None and (d - prev).days == 1:
+            run += 1
+        else:
+            run = 1
+        longest_streak = max(longest_streak, run)
+        prev = d
+
+    # Current streak ends at the last entry date
+    current_streak = 0
+    cursor = last_entry_date
+    while cursor in dates_set:
+        current_streak += 1
+        cursor = cursor - timedelta(days=1)
     
     return schemas.WeightStats(
         total_entries=total_entries,
@@ -351,6 +372,8 @@ def get_my_stats(
         weekly_change=weekly_change,
         monthly_change=monthly_change,
         six_month_change=six_month_change
+        ,current_streak=current_streak
+        ,longest_streak=longest_streak
     )
 
 

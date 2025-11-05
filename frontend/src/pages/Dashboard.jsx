@@ -120,17 +120,41 @@ function Dashboard() {
       return null;
     };
 
+    // Build series points for the selected window (or all if empty)
     const filtered = weight_trend
       .filter(item => new Date(item.date) >= cutoffDate)
       .map(toPoint)
       .filter(Boolean);
 
     const all = weight_trend.map(toPoint).filter(Boolean);
-    return filtered.length > 0 ? filtered : all;
+    const points = (filtered.length > 0 ? filtered : all);
+    // Attach previous values for icon direction
+    for (let i = 0; i < points.length; i++) {
+      points[i].prev = i > 0 ? points[i - 1].value : null;
+    }
+    return points;
   };
 
   const chartData = getFilteredChartData();
   const currentUnit = chartData.length > 0 ? (chartData[0].unit || '') : '';
+
+  // Custom dot rendering: filled triangles (red up, green down)
+  const TrendDot = ({ cx, cy, payload, index }) => {
+    if (index === 0 || !payload || payload.prev == null || cx == null || cy == null) return null;
+    const isUp = payload.value >= payload.prev;
+    const fill = isUp ? '#ef4444' : '#10b981'; // red up, green down
+    const size = 12; // overall size
+    const half = size / 2;
+    // Define triangle points relative to (0,0), then translate
+    const points = isUp
+      ? `0,${-half} ${-half},${half * 0.8} ${half},${half * 0.8}` // pointing up
+      : `0,${half} ${-half},${-half * 0.8} ${half},${-half * 0.8}`; // pointing down
+    return (
+      <g transform={`translate(${cx}, ${cy})`} style={{ pointerEvents: 'none' }}>
+        <polygon points={points} fill={fill} stroke="#ffffff" strokeWidth={1} />
+      </g>
+    );
+  };
 
   const todayISO = new Date().toISOString().split('T')[0];
   const userHeightCm = user?.height ? parseFloat(user.height) : null;
@@ -309,6 +333,14 @@ function Dashboard() {
                   {format(new Date(stats.last_entry_date), 'MMM yyyy')}
                 </p>
               )}
+              {(stats.current_streak || stats.longest_streak) && (
+                <p className="text-sm text-gray-600 mt-1">
+                  Streak: <span className="font-medium">{stats.current_streak || 0} days</span>
+                  {typeof stats.longest_streak === 'number' && (
+                    <span className="ml-2 text-gray-500">• Longest: {stats.longest_streak} days</span>
+                  )}
+                </p>
+              )}
             </div>
             <Calendar className="w-10 h-10 text-purple-400" />
           </div>
@@ -447,8 +479,8 @@ function Dashboard() {
                 dataKey="value" 
                 stroke="#0ea5e9" 
                 strokeWidth={3}
-                dot={{ fill: '#0ea5e9', r: 4 }}
-                activeDot={{ r: 6 }}
+                dot={<TrendDot />}
+                activeDot={{ r: 0 }}
               />
               {chartData.length > 10 && (
                 <Brush 

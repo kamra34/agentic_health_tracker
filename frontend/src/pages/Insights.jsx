@@ -520,8 +520,8 @@ function TrendSlopeCard({ summary }) {
   const has = summary && summary.trend_window_start && summary.trend_window_end;
   const start = has ? format(new Date(summary.trend_window_start), 'yyyy-MM-dd') : '--';
   const end = has ? format(new Date(summary.trend_window_end), 'yyyy-MM-dd') : '--';
-  const startW = summary?.trend_start_weight != null ? ${summary.trend_start_weight} kg : '--';
-  const endW = summary?.trend_end_weight != null ? ${summary.trend_end_weight} kg : '--';
+  const startW = summary?.trend_start_weight != null ? `${summary.trend_start_weight} kg` : '--';
+  const endW = summary?.trend_end_weight != null ? `${summary.trend_end_weight} kg` : '--';
   const d = summary?.trend_slope_kg_per_day != null ? summary.trend_slope_kg_per_day.toFixed(3) : '--';
   const w = summary?.trend_slope_kg_per_week != null ? summary.trend_slope_kg_per_week.toFixed(2) : '--';
   const m = summary?.trend_slope_kg_per_month != null ? summary.trend_slope_kg_per_month.toFixed(2) : '--';

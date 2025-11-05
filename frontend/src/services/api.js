@@ -96,8 +96,8 @@ export const adminAPI = {
 // Insights APIs
 export const insightsAPI = {
   getSummary: () => api.get('/api/insights/summary'),
-  getForecast: (metric = 'weight', horizon = 60) =>
-    api.get('/api/insights/forecast', { params: { metric, horizon } }),
+  getForecast: ({ metric = 'weight', horizon = 60, method = 'holt', train_window_days = 60, alpha, beta } = {}) =>
+    api.get('/api/insights/forecast', { params: { metric, horizon, method, train_window_days, alpha, beta } }),
   getComposition: () => api.get('/api/insights/composition'),
   getDistributions: (bins = 20) => api.get('/api/insights/distributions', { params: { bins } }),
   getSeasonality: () => api.get('/api/insights/seasonality'),

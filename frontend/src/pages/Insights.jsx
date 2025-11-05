@@ -21,8 +21,8 @@ function Insights() {
 
   // Forecast
   const { data: forecast } = useQuery({
-    queryKey: ['insights','forecast', metric],
-    queryFn: async () => (await insightsAPI.getForecast(metric, 60)).data,
+    queryKey: ['insights','forecast', metric, trainWindow, horizonDays, method],
+    queryFn: async () => (await insightsAPI.getForecast({ metric, horizon: horizonDays, method, train_window_days: trainWindow })).data,
   });
 
   // Insights data from backend
@@ -139,17 +139,43 @@ function Insights() {
           <div className="card">
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-lg font-semibold text-gray-800">Trend & Forecast</h2>
-              {/* Metric selector scoped to this chart */}
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-gray-600">Metric</span>
-                <select
-                  value={metric}
-                  onChange={(e) => setMetric(e.target.value)}
-                  className="border rounded-md px-2 py-1 text-sm"
-                >
-                  <option value="weight">Weight (kg)</option>
-                  <option value="bmi">BMI</option>
-                </select>
+              {/* Controls: metric, train window, horizon, model */}
+              <div className="flex items-center gap-3 flex-wrap justify-end">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-gray-600">Metric</span>
+                  <select value={metric} onChange={(e)=>setMetric(e.target.value)} className="border rounded-md px-2 py-1 text-sm">
+                    <option value="weight">Weight (kg)</option>
+                    <option value="bmi">BMI</option>
+                  </select>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-gray-600">Train</span>
+                  <select value={trainWindow} onChange={(e)=>setTrainWindow(parseInt(e.target.value))} className="border rounded-md px-2 py-1 text-sm">
+                    <option value={14}>2 weeks</option>
+                    <option value={30}>1 month</option>
+                    <option value={60}>2 months</option>
+                    <option value={90}>3 months</option>
+                    <option value={180}>6 months</option>
+                    <option value={10000}>All</option>
+                  </select>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-gray-600">Horizon</span>
+                  <select value={horizonDays} onChange={(e)=>setHorizonDays(parseInt(e.target.value))} className="border rounded-md px-2 py-1 text-sm">
+                    <option value={30}>1 month</option>
+                    <option value={60}>2 months</option>
+                    <option value={90}>3 months</option>
+                  </select>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-gray-600">Model</span>
+                  <select value={method} onChange={(e)=>setMethod(e.target.value)} className="border rounded-md px-2 py-1 text-sm">
+                    <option value="holt">Holt (trend)</option>
+                    <option value="ses">SES</option>
+                    <option value="ols">Linear</option>
+                    <option value="poly2">Quadratic</option>
+                  </select>
+                </div>
               </div>
             </div>
             <div style={{ width: '100%', height: 360 }}>
@@ -159,13 +185,13 @@ function Insights() {
                   <XAxis dataKey="dateLabel" tick={{ fontSize: 12 }} minTickGap={24} />
                   <YAxis tick={{ fontSize: 12 }} domain={['auto','auto']} />
                   <Tooltip formatter={(v) => `${v} ${currentUnits}`} labelFormatter={(l) => l} />
-                  {/* Forecast confidence band */}
-                  <Area type="monotone" dataKey="upper" stroke="#60a5fa" fill="#93c5fd" fillOpacity={0.25} isAnimationActive={false} />
-                  <Area type="monotone" dataKey="lower" stroke="#ffffff00" fill="#ffffff" fillOpacity={1} isAnimationActive={false} />
+                  {/* Forecast and bounds */}
                   <Line type="monotone" dataKey="actual" stroke="#10b981" strokeWidth={2} dot={false} name="Actual" />
                   <Line type="monotone" dataKey="ma7" stroke="#f59e0b" strokeWidth={1.5} dot={false} name="7d MA" />
                   <Line type="monotone" dataKey="ma30" stroke="#ef4444" strokeWidth={1.5} dot={false} name="30d MA" />
                   <Line type="monotone" dataKey="forecast" stroke="#2563eb" strokeDasharray="5 4" strokeWidth={2} dot={false} name="Forecast" />
+                  <Line type="monotone" dataKey="upper" stroke="#93c5fd" strokeWidth={1} dot={false} name="Upper" />
+                  <Line type="monotone" dataKey="lower" stroke="#93c5fd" strokeWidth={1} dot={false} name="Lower" />
                 </LineChart>
               </ResponsiveContainer>
             </div>
@@ -643,3 +669,4 @@ function AdherenceCard({ summary, dashboard }) {
     </div>
   );
 }
+

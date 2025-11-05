@@ -124,8 +124,9 @@ function Insights() {
       </div>
 
       {/* Top Summary Strip */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
         <TrendSlopeCard summary={summary} />
+        <BMITrendSlopeCard summary={summary} dashboard={dashboard} />
         <KpiCard
           label="Volatility (kg/day)"
           value={summary?.volatility_kg != null ? summary.volatility_kg.toFixed(2) : '--'}
@@ -540,6 +541,52 @@ function TrendSlopeCard({ summary }) {
         <div>Range: {start} - {end}</div>
         <div>Starting data point: {start} ({startW})</div>
         <div>Last data point: {end} ({endW})</div>
+      </div>
+    </div>
+  );
+}
+
+function BMITrendSlopeCard({ summary, dashboard }) {
+  const has = summary && summary.trend_window_start && summary.trend_window_end;
+  const start = has ? format(new Date(summary.trend_window_start), 'yyyy-MM-dd') : '--';
+  const end = has ? format(new Date(summary.trend_window_end), 'yyyy-MM-dd') : '--';
+  const user = dashboard?.user;
+  const trend = dashboard?.weight_trend || [];
+  const hM = user?.height ? parseFloat(user.height) / 100 : null;
+
+  const findWeightOn = (dStr) => {
+    if (!dStr) return null;
+    const match = trend.find(t => format(new Date(t.date), 'yyyy-MM-dd') === format(new Date(dStr), 'yyyy-MM-dd'));
+    return match ? (match.weight != null ? parseFloat(match.weight) : null) : null;
+  };
+
+  let startBMI = '--', endBMI = '--';
+  if (hM && hM > 0) {
+    const sw = findWeightOn(summary?.trend_window_start);
+    const ew = findWeightOn(summary?.trend_window_end);
+    if (sw != null) startBMI = (sw / (hM * hM)).toFixed(2);
+    if (ew != null) endBMI = (ew / (hM * hM)).toFixed(2);
+  }
+
+  const w = summary?.trend_bmi_slope_per_week != null ? summary.trend_bmi_slope_per_week.toFixed(2) : '--';
+  const d = summary?.trend_bmi_slope_per_week != null ? (summary.trend_bmi_slope_per_week / 7).toFixed(3) : '--';
+  const m = summary?.trend_bmi_slope_per_week != null ? (summary.trend_bmi_slope_per_week * (30/7)).toFixed(2) : '--';
+
+  return (
+    <div className="stat-card bg-gradient-to-br from-indigo-50 to-indigo-100 border-indigo-200">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-gray-700">Trend Slope (BMI)</p>
+        <span title="Computed over the same recent window as weight trend." className="ml-2 inline-flex items-center justify-center w-5 h-5 text-[10px] font-semibold rounded-full border border-gray-300 text-gray-600 bg-white cursor-help">i</span>
+      </div>
+      <div className="mt-1 text-gray-900">
+        <div className="text-sm">{d} BMI/day</div>
+        <div className="text-lg font-semibold">{w} BMI/week</div>
+        <div className="text-sm">{m} BMI/month</div>
+      </div>
+      <div className="mt-2 text-xs text-gray-600">
+        <div>Range: {start} - {end}</div>
+        <div>Starting data point: {start} ({startBMI})</div>
+        <div>Last data point: {end} ({endBMI})</div>
       </div>
     </div>
   );

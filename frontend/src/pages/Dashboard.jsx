@@ -178,16 +178,63 @@ function Dashboard() {
         {/* BMI */}
         <div className="stat-card bg-gradient-to-br from-green-50 to-green-100 border-green-200">
           <div className="flex items-start justify-between">
-            <div>
+            <div className="flex-1 pr-4">
               <p className="text-sm text-green-600 font-medium">BMI</p>
               <p className={`text-3xl font-bold mt-2 ${getBMIColor(stats.current_bmi)}`}>
                 {stats.current_bmi || '--'}
               </p>
               {stats.bmi_category && (
-                <p className="text-sm text-gray-600 mt-2">{stats.bmi_category}</p>
+                <p className="text-sm text-gray-600 mt-1">{stats.bmi_category}</p>
               )}
+
+              {/* BMI Range Visual */}
+              {(() => {
+                const bmiMax = 50;
+                const bmiVal = stats.current_bmi != null ? parseFloat(stats.current_bmi) : null;
+                const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+                const segments = [
+                  { label: 'Under', max: 18.5, color: 'bg-blue-200' },
+                  { label: 'Normal', max: 25,   color: 'bg-green-300' },
+                  { label: 'Over',   max: 30,   color: 'bg-yellow-300' },
+                  { label: 'Ob I',   max: 35,   color: 'bg-orange-300' },
+                  { label: 'Ob II',  max: 40,   color: 'bg-orange-400' },
+                  { label: 'Ob III', max: bmiMax, color: 'bg-red-400' },
+                ];
+                let prev = 0;
+                const segs = segments.map(s => {
+                  const width = ((s.max - prev) / bmiMax) * 100;
+                  const start = prev;
+                  prev = s.max;
+                  return { ...s, width, start };
+                });
+                const percent = bmiVal != null ? (clamp(Math.min(bmiVal, bmiMax), 0, bmiMax) / bmiMax) * 100 : null;
+                return (
+                  <div className="mt-3">
+                    <div className="relative h-3 rounded overflow-hidden flex border border-green-200">
+                      {segs.map((s, i) => (
+                        <div key={i} className={`${s.color}`} style={{ width: `${s.width}%` }} />
+                      ))}
+                      {percent != null && (
+                        <div
+                          className="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full border-2 border-white shadow"
+                          style={{ left: `calc(${percent}% - 6px)`, backgroundColor: '#065f46' }}
+                          title={`BMI ${bmiVal}`}
+                        />
+                      )}
+                    </div>
+                    <div className="flex justify-between text-[10px] text-gray-600 mt-1">
+                      <span className="text-blue-700">Under</span>
+                      <span className="text-green-700">Normal</span>
+                      <span className="text-yellow-700">Over</span>
+                      <span className="text-orange-700">Ob I</span>
+                      <span className="text-orange-800">Ob II</span>
+                      <span className="text-red-700">Ob III</span>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
-            <Target className="w-10 h-10 text-green-400" />
+            <Target className="w-10 h-10 text-green-400 flex-shrink-0" />
           </div>
         </div>
 
@@ -388,12 +435,12 @@ function Dashboard() {
           {active_targets.length === 0 ? (
             <div className="text-center py-8 text-gray-500">
               <Target className="w-12 h-12 mx-auto mb-2 text-gray-300" />
-              <p>No active goals yet</p>
+              <p>No active goals right now</p>
               <button 
                 className="btn btn-primary mt-4"
                 onClick={() => window.location.href = '/targets'}
               >
-                Set your first goal
+                Create a new goal
               </button>
             </div>
           ) : (

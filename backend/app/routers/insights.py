@@ -61,6 +61,41 @@ def _exp_smooth(values: List[float], alpha: float = 0.3) -> List[float]:
     return smoothed
 
 
+def _holt_linear(values: List[float], alpha: float = 0.3, beta: float = 0.1):
+    """Holt's linear trend method (double exponential smoothing).
+    Returns (levels, trends, fitted, resid_std).
+    """
+    n = len(values)
+    if n == 0:
+        return [], [], [], 0.0
+    if n == 1:
+        return [values[0]], [0.0], [values[0]], 0.0
+    # Initialize
+    # Initial trend = average of first diffs (up to 5 points)
+    diffs = [values[i] - values[i-1] for i in range(1, min(n, 6))]
+    b = sum(diffs) / len(diffs) if diffs else values[1] - values[0]
+    l = values[0]
+    levels = [l]
+    trends = [b]
+    fitted = [values[0]]  # yhat_0 ~ y0
+    # Iterate
+    for t in range(1, n):
+        y = values[t]
+        # one-step-ahead pred using previous components
+        yhat = l + b
+        fitted.append(yhat)
+        # update components
+        new_l = alpha * y + (1 - alpha) * (l + b)
+        new_b = beta * (new_l - l) + (1 - beta) * b
+        l, b = new_l, new_b
+        levels.append(l)
+        trends.append(b)
+    # residuals (skip first where fitted equals y0)
+    residuals = [y - yhat for y, yhat in zip(values[1:], fitted[1:])]
+    resid_std = pstdev(residuals) if len(residuals) >= 2 else 0.0
+    return levels, trends, fitted, resid_std
+
+
 def _daily_x_axis(dates: List[date]) -> List[float]:
     if not dates:
         return []
@@ -186,7 +221,31 @@ def get_summary(
     xs = _daily_x_axis(list(dates))
     ys = list(values)
 
-    slope_per_day, _, r2 = _linear_regression(xs, ys)
+    # Compute trend limited to recent window (last 35 days) with min quality
+    window_days = 35
+    min_span_days = 14
+    min_weeks = 2
+    min_entries_per_week = 3
+
+    cutoff = dates[-1] - timedelta(days=window_days - 1)
+    recent_points = [(d, v) for d, v in zip(dates, ys) if d >= cutoff]
+    # count entries per ISO week among recent points
+    week_counts: Dict[Tuple[int, int], int] = {}
+    for d, _ in recent_points:
+        iso = d.isocalendar()
+        key = (iso[0], iso[1])  # year, week
+        week_counts[key] = week_counts.get(key, 0) + 1
+    qualified_weeks = sum(1 for c in week_counts.values() if c >= min_entries_per_week)
+    span_days = (recent_points[-1][0] - recent_points[0][0]).days if len(recent_points) >= 2 else 0
+
+    use_recent = qualified_weeks >= min_weeks and span_days >= min_span_days
+
+    if use_recent:
+        r_dates, r_vals = zip(*recent_points)
+        r_xs = _daily_x_axis(list(r_dates))
+        slope_per_day, _, r2 = _linear_regression(r_xs, list(r_vals))
+    else:
+        slope_per_day, _, r2 = _linear_regression(xs, ys)
     slope_per_week = slope_per_day * 7.0
 
     diffs = _differences(ys)
@@ -280,12 +339,15 @@ def get_forecast(
     metric: str = Query("weight", pattern="^(weight)$"),
     horizon: int = Query(60, ge=1, le=180),
     alpha: float = Query(0.3, ge=0.05, le=0.9),
+    beta: float = Query(0.1, ge=0.01, le=0.9),
+    method: str = Query("holt", pattern="^(holt|ses)$"),
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     cached = _cache_get("forecast", current_user.id)
     if cached and cached.metric == metric and cached.horizon_days == horizon:
-        return cached
+        # ignore cache if method differs from previous stored method
+        pass
     weights = (
         db.query(models.Weight)
         .filter(models.Weight.user_id == current_user.id)
@@ -298,24 +360,30 @@ def get_forecast(
 
     dates, values = zip(*series)
     values = list(values)
-    smoothed = _exp_smooth(values, alpha=alpha)
-
-    # Residuals std for band
-    residuals = [v - s for v, s in zip(values, smoothed)]
-    resid_std = pstdev(residuals) if len(residuals) >= 2 else 0.0
-
     last_date = dates[-1]
-    last_s = smoothed[-1]
     z80 = 1.28  # ~80% interval
 
     points: List[ForecastPoint] = []
-    for i in range(1, horizon + 1):
-        d = last_date + timedelta(days=i)
-        f = last_s  # SES flat forecast
-        band = z80 * resid_std
-        points.append(
-            ForecastPoint(date=d, forecast=round(float(f), 2), lower=round(float(f - band), 2), upper=round(float(f + band), 2))
-        )
+
+    if method == "ses":
+        smoothed = _exp_smooth(values, alpha=alpha)
+        residuals = [v - s for v, s in zip(values, smoothed)]
+        resid_std = pstdev(residuals) if len(residuals) >= 2 else 0.0
+        last_s = smoothed[-1]
+        for i in range(1, horizon + 1):
+            d = last_date + timedelta(days=i)
+            f = last_s
+            band = z80 * resid_std  # simple constant band
+            points.append(ForecastPoint(date=d, forecast=round(float(f), 2), lower=round(float(f - band), 2), upper=round(float(f + band), 2)))
+    else:
+        # Holt's linear trend forecast
+        levels, trends, fitted, resid_std = _holt_linear(values, alpha=alpha, beta=beta)
+        lT, bT = levels[-1], trends[-1]
+        for h in range(1, horizon + 1):
+            d = last_date + timedelta(days=h)
+            f = lT + h * bT
+            band = z80 * resid_std * (h ** 0.5)  # widen with horizon
+            points.append(ForecastPoint(date=d, forecast=round(float(f), 2), lower=round(float(f - band), 2), upper=round(float(f + band), 2)))
 
     resp = ForecastResponse(
         metric=metric,

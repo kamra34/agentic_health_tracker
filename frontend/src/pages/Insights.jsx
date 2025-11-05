@@ -422,7 +422,6 @@ function CompositionSection({ composition }) {
   );
 }
 
-function GoalAnalyticsSection({ dashboard, history }) {
 function GoalAnalyticsSection({ goalAnalytics }) {
   const rows = goalAnalytics?.rows || [];
 
@@ -437,7 +436,7 @@ function GoalAnalyticsSection({ goalAnalytics }) {
               <th className="text-right pr-4">Required Slope</th>
               <th className="text-right pr-4">Recent Slope</th>
               <th className="text-right pr-4">Prob. Score</th>
-              <th className="text-right">ETA (Cons–Opt)</th>
+              <th className="text-right">ETA (Cons-Opt)</th>
             </tr>
           </thead>
           <tbody>
@@ -452,7 +451,7 @@ function GoalAnalyticsSection({ goalAnalytics }) {
                 <td className="py-1 text-right">{r.required_slope_kg_per_week.toFixed(2)} kg/wk</td>
                 <td className="py-1 text-right">{r.recent_slope_kg_per_week.toFixed(2)} kg/wk</td>
                 <td className="py-1 text-right">{r.probability_score}</td>
-                <td className="py-1 text-right">{r.eta_conservative || r.eta_optimistic ? `${r.eta_conservative ?? '—'} – ${r.eta_optimistic ?? '—'}` : '—'}</td>
+                <td className="py-1 text-right">{r.eta_conservative || r.eta_optimistic ? `${r.eta_conservative ?? '--'} - ${r.eta_optimistic ?? '--'}` : '--'}</td>
               </tr>
             ))}
           </tbody>
@@ -470,7 +469,7 @@ function WhatIfSection({ dashboard }) {
     .sort((a,b) => new Date(a.date_of_target) - new Date(b.date_of_target))[0];
   const [weekly, setWeekly] = useState(-0.5); // kg/week (negative means loss)
 
-  let finishText = '—';
+  let finishText = '--';
   if (nearest && currentWeight != null) {
     const targetWeight = parseFloat(nearest.target_weight);
     const delta = targetWeight - currentWeight; // kg to change

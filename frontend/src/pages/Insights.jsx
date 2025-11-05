@@ -6,6 +6,10 @@ import { format, differenceInCalendarDays, addDays } from 'date-fns';
 
 function Insights() {
   const [metric, setMetric] = useState('weight'); // 'weight' | 'bmi'
+  // Forecast controls
+  const [trainWindow, setTrainWindow] = useState(60); // days
+  const [horizonDays, setHorizonDays] = useState(60); // days
+  const [method, setMethod] = useState('holt'); // 'holt' | 'ses' | 'ols' | 'poly2'
 
   // Base data: history for past 6 months (from dashboard)
   const { data: dashboard } = useQuery({

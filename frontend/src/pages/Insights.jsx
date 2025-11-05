@@ -121,17 +121,26 @@ function Insights() {
       {/* Top Summary Strip */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
         <KpiCard
-          label="Trend Slope (per week)"
+          label="Trend Slope (kg/week)"
           value={summary ? `${summary.trend_slope_kg_per_week.toFixed(2)} kg` : '--'}
           info="Average weekly change from a linear trend line of your history. Negative = weight loss per week."
         />
+{false && (<KpiCard
+          label="Trend Slope (BMI/week)"
+          value={summary?.trend_bmi_slope_per_week != null ? summary.trend_bmi_slope_per_week.toFixed(2) : '--'}
+          info="Average weekly BMI change over the same recent window."
+          subtitle={summary?.trend_window_start && summary?.trend_window_end ? `${format(new Date(summary.trend_window_start), 'yyyy-MM-dd')} - ${format(new Date(summary.trend_window_end), 'yyyy-MM-dd')}` : undefined}
+        />) }
+          subtitle={summary?.trend_window_start && summary?.trend_window_end ? `${format(new Date(summary.trend_window_start), 'yyyy-MM-dd')} - ${format(new Date(summary.trend_window_end), 'yyyy-MM-dd')}` : undefined}
         <KpiCard
           label="Fit (R²)"
           value={summary ? summary.r2.toFixed(2) : '--'}
+          subtitle={summary?.volatility_window_start && summary?.volatility_window_end ? `${format(new Date(summary.volatility_window_start), 'yyyy-MM-dd')} - ${format(new Date(summary.volatility_window_end), 'yyyy-MM-dd')}` : undefined}
           info="How well a straight line fits your past data (0–1). Higher = more consistent trend."
         />
         <KpiCard
           label="Volatility"
+          subtitle={summary?.adherence_window_start && summary?.adherence_window_end ? `${format(new Date(summary.adherence_window_start), 'yyyy-MM-dd')} - ${format(new Date(summary.adherence_window_end), 'yyyy-MM-dd')}` : undefined}
           value={summary?.volatility_kg != null ? `${summary.volatility_kg.toFixed(2)} kg` : '--'}
           info="Standard deviation of daily changes. Higher = more day‑to‑day noise."
         />
@@ -504,7 +513,7 @@ function WhatIfSection({ dashboard }) {
 export default Insights;
 
 // ----- UI bits -----
-function KpiCard({ label, value, info }) {
+function KpiCard({ label, value, info, subtitle }) {
   return (
     <div className="stat-card">
       <div className="flex items-center justify-between">
@@ -512,6 +521,7 @@ function KpiCard({ label, value, info }) {
         <span title={info} className="ml-2 inline-flex items-center justify-center w-5 h-5 text-[10px] font-semibold rounded-full border border-gray-300 text-gray-600 bg-white cursor-help">i</span>
       </div>
       <p className="text-2xl font-bold mt-1 text-gray-900">{value}</p>
+      {subtitle && <p className="text-xs text-gray-500 mt-1">{subtitle}</p>}
     </div>
   );
 }

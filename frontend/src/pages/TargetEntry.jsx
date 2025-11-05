@@ -388,7 +388,7 @@ function TargetEntry() {
 
                 {/* Details */}
                 <div className="space-y-3">
-                  {/* Weights Overview */
+                  {/* Weights Overview */}
                   <div className="grid grid-cols-3 gap-3 text-sm">
                     <div className="p-2 rounded bg-gray-50">
                       <div className="text-gray-500">Target</div>

@@ -9,6 +9,7 @@ import Dashboard from './pages/Dashboard';
 import WeightEntry from './pages/WeightEntry';
 import TargetEntry from './pages/TargetEntry';
 import Insights from './pages/Insights';
+import Profile from './pages/Profile';
 import Layout from './components/Layout';
 
 // Protected Route wrapper
@@ -56,6 +57,7 @@ function App() {
         <Route path="weights" element={<WeightEntry />} />
         <Route path="targets" element={<TargetEntry />} />
         <Route path="insights" element={<Insights />} />
+        <Route path="profile" element={<Profile />} />
       </Route>
 
       {/* Catch all */}

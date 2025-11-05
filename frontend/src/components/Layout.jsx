@@ -1,5 +1,5 @@
 import { Outlet, NavLink } from 'react-router-dom';
-import { Home, TrendingUp, Target, BarChart3, LogOut } from 'lucide-react';
+import { Home, TrendingUp, Target, BarChart3, LogOut, User } from 'lucide-react';
 import useAuthStore from '../stores/authStore';
 
 function Layout() {
@@ -10,6 +10,7 @@ function Layout() {
     { to: '/weights', icon: TrendingUp, label: 'Weights' },
     { to: '/targets', icon: Target, label: 'Targets' },
     { to: '/insights', icon: BarChart3, label: 'Insights' },
+    { to: '/profile', icon: User, label: 'Profile' },
   ];
 
   return (

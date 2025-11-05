@@ -66,6 +66,8 @@ export const weightAPI = {
   getById: (id) => api.get(`/api/weights/${id}`),
   update: (id, data) => api.put(`/api/weights/${id}`, data),
   delete: (id) => api.delete(`/api/weights/${id}`),
+  backfillEstimates: (overwrite = true) =>
+    api.post('/api/weights/backfill-estimates', null, { params: { overwrite } }),
 };
 
 // Target APIs

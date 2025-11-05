@@ -87,6 +87,10 @@ export const adminAPI = {
   listUsers: () => api.get('/api/admin/users'),
   setAdmin: (userId, isAdmin) => api.put(`/api/admin/users/${userId}/admin`, null, { params: { is_admin: isAdmin } }),
   deleteTarget: (targetId) => api.delete(`/api/admin/targets/${targetId}`),
+  getUser: (userId) => api.get(`/api/admin/users/${userId}`),
+  getUserTargets: (userId) => api.get(`/api/admin/users/${userId}/targets`),
+  deleteUser: (userId) => api.delete(`/api/admin/users/${userId}`),
+  setUserPassword: (userId, newPassword) => api.post(`/api/admin/users/${userId}/set-password`, null, { params: { new_password: newPassword } }),
 };
 
 export default api;

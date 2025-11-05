@@ -187,48 +187,61 @@ function Dashboard() {
                 <p className="text-sm text-gray-600 mt-1">{stats.bmi_category}</p>
               )}
 
-              {/* BMI Range Visual */}
+              {/* BMI Range Visual (modern, equal segments with marker) */}
               {(() => {
                 const bmiMax = 50;
                 const bmiVal = stats.current_bmi != null ? parseFloat(stats.current_bmi) : null;
                 const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
                 const segments = [
-                  { label: 'Under', max: 18.5, color: 'bg-blue-200' },
-                  { label: 'Normal', max: 25,   color: 'bg-green-300' },
-                  { label: 'Over',   max: 30,   color: 'bg-yellow-300' },
-                  { label: 'Ob I',   max: 35,   color: 'bg-orange-300' },
-                  { label: 'Ob II',  max: 40,   color: 'bg-orange-400' },
-                  { label: 'Ob III', max: bmiMax, color: 'bg-red-400' },
+                  { label: 'Under',  colorBar: 'bg-blue-300',   colorText: 'text-blue-700' },
+                  { label: 'Normal', colorBar: 'bg-green-400',  colorText: 'text-green-700' },
+                  { label: 'Over',   colorBar: 'bg-yellow-400', colorText: 'text-yellow-700' },
+                  { label: 'Ob I',   colorBar: 'bg-orange-400', colorText: 'text-orange-700' },
+                  { label: 'Ob II',  colorBar: 'bg-orange-500', colorText: 'text-orange-800' },
+                  { label: 'Ob III', colorBar: 'bg-red-500',    colorText: 'text-red-700' },
                 ];
-                let prev = 0;
-                const segs = segments.map(s => {
-                  const width = ((s.max - prev) / bmiMax) * 100;
-                  const start = prev;
-                  prev = s.max;
-                  return { ...s, width, start };
-                });
-                const percent = bmiVal != null ? (clamp(Math.min(bmiVal, bmiMax), 0, bmiMax) / bmiMax) * 100 : null;
+                // Thresholds for categories: Under(<18.5), Normal(<25), Over(<30), Ob I(<35), Ob II(<40), Ob III(<=50)
+                const thresholds = [0, 18.5, 25, 30, 35, 40, bmiMax];
+                let percent = null;
+                if (bmiVal != null) {
+                  if (bmiVal >= thresholds[thresholds.length - 1]) {
+                    percent = 100;
+                  } else {
+                    let idx = 0;
+                    for (let i = 0; i < thresholds.length - 1; i++) {
+                      if (bmiVal < thresholds[i + 1]) { idx = i; break; }
+                    }
+                    const start = thresholds[idx];
+                    const end = thresholds[idx + 1];
+                    const frac = clamp((bmiVal - start) / (end - start), 0, 1);
+                    const segWidth = 100 / segments.length;
+                    percent = (idx + frac) * segWidth;
+                  }
+                }
                 return (
                   <div className="mt-3">
-                    <div className="relative h-3 rounded overflow-hidden flex border border-green-200">
-                      {segs.map((s, i) => (
-                        <div key={i} className={`${s.color}`} style={{ width: `${s.width}%` }} />
-                      ))}
+                    <div className="relative">
+                      <div className="flex gap-0.5 h-4 rounded-full overflow-hidden shadow-sm bg-white border border-green-200">
+                        {segments.map((s, i) => (
+                          <div
+                            key={i}
+                            className={`${s.colorBar} flex-1 ${i === 0 ? 'rounded-l-full' : ''} ${i === segments.length - 1 ? 'rounded-r-full' : ''}`}
+                          />
+                        ))}
+                      </div>
                       {percent != null && (
                         <div
-                          className="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full border-2 border-white shadow"
-                          style={{ left: `calc(${percent}% - 6px)`, backgroundColor: '#065f46' }}
-                          title={`BMI ${bmiVal}`}
-                        />
+                          className="absolute -top-1 left-0"
+                          style={{ left: `calc(${percent}% - 1px)` }}
+                        >
+                          <div className="w-0.5 h-6 bg-emerald-800 rounded-full shadow" />
+                        </div>
                       )}
                     </div>
-                    <div className="flex justify-between text-[10px] text-gray-600 mt-1">
-                      <span className="text-blue-700">Under</span>
-                      <span className="text-green-700">Normal</span>
-                      <span className="text-yellow-700">Over</span>
-                      <span className="text-orange-700">Ob I</span>
-                      <span className="text-orange-800">Ob II</span>
-                      <span className="text-red-700">Ob III</span>
+                    <div className="mt-1 grid grid-cols-6 text-[11px]">
+                      {segments.map((s, i) => (
+                        <div key={i} className={`text-center ${s.colorText}`}>{s.label}</div>
+                      ))}
                     </div>
                   </div>
                 );

@@ -111,6 +111,11 @@ function Insights() {
   }, [distributions]);
   const recentStd = distributions?.recent_std ?? 0;
   const outlierCount30d = distributions?.outliers_last_30d ?? 0;
+  // KPI range subtitles
+  const rangeStr = (s, e) => (s && e ? `${format(new Date(s), 'yyyy-MM-dd')} - ${format(new Date(e), 'yyyy-MM-dd')}` : undefined);
+  const trendRange = rangeStr(summary?.trend_window_start, summary?.trend_window_end);
+  const volRange = rangeStr(summary?.volatility_window_start, summary?.volatility_window_end);
+  const adhRange = rangeStr(summary?.adherence_window_start, summary?.adherence_window_end);
 
   return (
     <div>
@@ -119,35 +124,19 @@ function Insights() {
       </div>
 
       {/* Top Summary Strip */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        <TrendSlopeCard summary={summary} />
         <KpiCard
-          label="Trend Slope (kg/week)"
-          value={summary ? `${summary.trend_slope_kg_per_week.toFixed(2)} kg` : '--'}
-          info="Average weekly change from a linear trend line of your history. Negative = weight loss per week."
-        />
-{false && (<KpiCard
-          label="Trend Slope (BMI/week)"
-          value={summary?.trend_bmi_slope_per_week != null ? summary.trend_bmi_slope_per_week.toFixed(2) : '--'}
-          info="Average weekly BMI change over the same recent window."
-          subtitle={summary?.trend_window_start && summary?.trend_window_end ? `${format(new Date(summary.trend_window_start), 'yyyy-MM-dd')} - ${format(new Date(summary.trend_window_end), 'yyyy-MM-dd')}` : undefined}
-        />) }
-          subtitle={summary?.trend_window_start && summary?.trend_window_end ? `${format(new Date(summary.trend_window_start), 'yyyy-MM-dd')} - ${format(new Date(summary.trend_window_end), 'yyyy-MM-dd')}` : undefined}
-        <KpiCard
-          label="Fit (R²)"
-          value={summary ? summary.r2.toFixed(2) : '--'}
-          subtitle={summary?.volatility_window_start && summary?.volatility_window_end ? `${format(new Date(summary.volatility_window_start), 'yyyy-MM-dd')} - ${format(new Date(summary.volatility_window_end), 'yyyy-MM-dd')}` : undefined}
-          info="How well a straight line fits your past data (0–1). Higher = more consistent trend."
+          label="Volatility (kg/day)"
+          value={summary?.volatility_kg != null ? summary.volatility_kg.toFixed(2) : '--'}
+          info="Std dev of daily changes over the same window. Higher = more day-to-day noise."
+          subtitle={volRange}
         />
         <KpiCard
-          label="Volatility"
-          subtitle={summary?.adherence_window_start && summary?.adherence_window_end ? `${format(new Date(summary.adherence_window_start), 'yyyy-MM-dd')} - ${format(new Date(summary.adherence_window_end), 'yyyy-MM-dd')}` : undefined}
-          value={summary?.volatility_kg != null ? `${summary.volatility_kg.toFixed(2)} kg` : '--'}
-          info="Standard deviation of daily changes. Higher = more day‑to‑day noise."
-        />
-        <KpiCard
-          label="Adherence"
-          value={summary ? `${summary.adherence.entries_per_week.toFixed(2)} / wk` : '--'}
-          info="Logging consistency: entries per week. See details in the Diagnostics card."
+          label="Adherence (entries/week)"
+          value={summary ? summary.adherence.entries_per_week.toFixed(2) : '--'}
+          info="Logging consistency. Details: avg days between, streak, and longest gap."
+          subtitle={adhRange}
         />
       </div>
 
@@ -522,6 +511,36 @@ function KpiCard({ label, value, info, subtitle }) {
       </div>
       <p className="text-2xl font-bold mt-1 text-gray-900">{value}</p>
       {subtitle && <p className="text-xs text-gray-500 mt-1">{subtitle}</p>}
+    </div>
+  );
+}
+
+
+function TrendSlopeCard({ summary }) {
+  const has = summary && summary.trend_window_start && summary.trend_window_end;
+  const start = has ? format(new Date(summary.trend_window_start), 'yyyy-MM-dd') : '--';
+  const end = has ? format(new Date(summary.trend_window_end), 'yyyy-MM-dd') : '--';
+  const startW = summary?.trend_start_weight != null ? ${summary.trend_start_weight} kg : '--';
+  const endW = summary?.trend_end_weight != null ? ${summary.trend_end_weight} kg : '--';
+  const d = summary?.trend_slope_kg_per_day != null ? summary.trend_slope_kg_per_day.toFixed(3) : '--';
+  const w = summary?.trend_slope_kg_per_week != null ? summary.trend_slope_kg_per_week.toFixed(2) : '--';
+  const m = summary?.trend_slope_kg_per_month != null ? summary.trend_slope_kg_per_month.toFixed(2) : '--';
+  return (
+    <div className="stat-card bg-gradient-to-br from-emerald-50 to-emerald-100 border-emerald-200">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-gray-700">Trend Slope (Weight)</p>
+        <span title="Computed over a recent window (<= 3 months, >= 2 weeks when available)." className="ml-2 inline-flex items-center justify-center w-5 h-5 text-[10px] font-semibold rounded-full border border-gray-300 text-gray-600 bg-white cursor-help">i</span>
+      </div>
+      <div className="mt-1 text-gray-900">
+        <div className="text-sm">{d} kg/day</div>
+        <div className="text-lg font-semibold">{w} kg/week</div>
+        <div className="text-sm">{m} kg/month</div>
+      </div>
+      <div className="mt-2 text-xs text-gray-600">
+        <div>Range: {start} - {end}</div>
+        <div>Starting data point: {start} ({startW})</div>
+        <div>Last data point: {end} ({endW})</div>
+      </div>
     </div>
   );
 }

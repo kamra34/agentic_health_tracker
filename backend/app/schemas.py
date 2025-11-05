@@ -59,6 +59,9 @@ class WeightBase(BaseModel):
     """Base weight schema."""
     date_of_measurement: date
     weight: Decimal = Field(..., gt=0, le=500)  # kg
+    body_fat_percentage: Optional[Decimal] = Field(None, ge=0, le=100)
+    muscle_mass: Optional[Decimal] = Field(None, ge=0, le=500)
+    notes: Optional[str] = None
 
 
 class WeightCreate(WeightBase):
@@ -70,6 +73,9 @@ class WeightUpdate(BaseModel):
     """Schema for updating a weight entry."""
     date_of_measurement: Optional[date] = None
     weight: Optional[Decimal] = Field(None, gt=0, le=500)
+    body_fat_percentage: Optional[Decimal] = Field(None, ge=0, le=100)
+    muscle_mass: Optional[Decimal] = Field(None, ge=0, le=500)
+    notes: Optional[str] = None
 
 
 class Weight(WeightBase):

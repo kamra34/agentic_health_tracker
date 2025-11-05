@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { userAPI } from '../services/api';
-import { TrendingUp, TrendingDown, Target, Scale, Calendar, Award, ArrowDown, Clock, TrendingUp as ProgressIcon, CheckCircle, XCircle } from 'lucide-react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { userAPI, weightAPI } from '../services/api';
+import { TrendingUp, TrendingDown, Target, Scale, Calendar, Award, ArrowDown, Clock, TrendingUp as ProgressIcon, CheckCircle, XCircle, Save } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Brush } from 'recharts';
 import { format, subDays, subMonths } from 'date-fns';
 
@@ -93,6 +93,26 @@ function Dashboard() {
   };
 
   const chartData = getFilteredChartData();
+
+  // Quick check-in state
+  const [quickWeight, setQuickWeight] = useState('');
+  const [quickNotes, setQuickNotes] = useState('');
+  const queryClient = useQueryClient();
+  const addQuickMutation = useMutation({
+    mutationFn: (data) => weightAPI.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries(['dashboard']);
+      queryClient.invalidateQueries(['weights']);
+      setQuickWeight('');
+      setQuickNotes('');
+    },
+  });
+
+  const todayISO = new Date().toISOString().split('T')[0];
+  const userHeightCm = user?.height ? parseFloat(user.height) : null;
+  const quickBMI = (quickWeight && userHeightCm)
+    ? (parseFloat(quickWeight) / Math.pow(userHeightCm / 100, 2)).toFixed(2)
+    : null;
 
   // Commitment: % of last 30 days with at least one entry
   const commitmentPercentage = (() => {
@@ -391,7 +411,7 @@ function Dashboard() {
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Recent Weights */}
+        {/* Recent Weights + Quick Check-in */}
         <div className="card">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xl font-bold text-gray-800">Recent Entries</h2>
@@ -401,6 +421,67 @@ function Dashboard() {
             >
               View all →
             </button>
+          </div>
+
+          {/* Quick Check-in Form */}
+          <div className="mb-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!quickWeight) return;
+                addQuickMutation.mutate({
+                  date_of_measurement: todayISO,
+                  weight: parseFloat(quickWeight),
+                  notes: quickNotes || null,
+                });
+              }}
+              className="grid grid-cols-1 md:grid-cols-5 gap-3 items-end"
+            >
+              <div className="md:col-span-2">
+                <label className="block text-xs font-medium text-gray-600 mb-1">Weight (kg)</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  max="500"
+                  className="input"
+                  placeholder="e.g., 75.5"
+                  value={quickWeight}
+                  onChange={(e) => setQuickWeight(e.target.value)}
+                  required
+                />
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-xs font-medium text-gray-600 mb-1">Notes (optional)</label>
+                <input
+                  type="text"
+                  className="input"
+                  placeholder="How do you feel?"
+                  value={quickNotes}
+                  onChange={(e) => setQuickNotes(e.target.value)}
+                />
+              </div>
+              <div className="flex gap-2 md:col-span-1">
+                <button
+                  type="submit"
+                  className="btn btn-primary w-full flex items-center justify-center gap-2"
+                  disabled={addQuickMutation.isPending}
+                >
+                  <Save size={16} />
+                  {addQuickMutation.isPending ? 'Saving...' : 'Check in'}
+                </button>
+              </div>
+              {quickBMI && (
+                <div className="md:col-span-5 text-xs text-gray-600">
+                  BMI: <span className="font-semibold">{quickBMI}</span> (auto-calculated)
+                </div>
+              )}
+              {addQuickMutation.isError && (
+                <div className="md:col-span-5 text-xs text-red-600">
+                  {addQuickMutation.error?.response?.data?.detail || 'Failed to add entry'}
+                </div>
+              )}
+            </form>
           </div>
           
           {recent_weights.length === 0 ? (

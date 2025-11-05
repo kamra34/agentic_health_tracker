@@ -37,6 +37,9 @@ class Weight(Base):
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     date_of_measurement = Column(Date, nullable=False)
     weight = Column(Numeric, nullable=False)  # in kg
+    body_fat_percentage = Column(Numeric(5, 2))  # optional
+    muscle_mass = Column(Numeric(5, 2))  # optional
+    notes = Column(String)  # optional
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
     # Relationships

@@ -41,7 +41,10 @@ def create_weight(
     db_weight = models.Weight(
         user_id=current_user.id,
         date_of_measurement=weight.date_of_measurement,
-        weight=weight.weight
+        weight=weight.weight,
+        body_fat_percentage=weight.body_fat_percentage,
+        muscle_mass=weight.muscle_mass,
+        notes=weight.notes
     )
     
     db.add(db_weight)
@@ -163,6 +166,12 @@ def update_weight(
     
     if weight_update.weight is not None:
         weight.weight = weight_update.weight
+    if weight_update.body_fat_percentage is not None:
+        weight.body_fat_percentage = weight_update.body_fat_percentage
+    if weight_update.muscle_mass is not None:
+        weight.muscle_mass = weight_update.muscle_mass
+    if weight_update.notes is not None:
+        weight.notes = weight_update.notes
     
     db.commit()
     db.refresh(weight)

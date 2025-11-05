@@ -1,5 +1,6 @@
 """
 User profile routes: viewing and updating user information.
+Enhanced with time-based weight change calculations.
 """
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -36,6 +37,35 @@ def get_bmi_category(bmi: float) -> str:
         return "Obese Class II"
     else:
         return "Obese Class III"
+
+
+def get_weight_at_date(db: Session, user_id: int, target_date: date) -> float:
+    """Get weight closest to target date."""
+    # Try to find weight on exact date
+    weight = db.query(models.Weight).filter(
+        models.Weight.user_id == user_id,
+        models.Weight.date_of_measurement == target_date
+    ).first()
+    
+    if weight:
+        return float(weight.weight)
+    
+    # Find closest weight before target date
+    weight = db.query(models.Weight).filter(
+        models.Weight.user_id == user_id,
+        models.Weight.date_of_measurement <= target_date
+    ).order_by(desc(models.Weight.date_of_measurement)).first()
+    
+    if weight:
+        return float(weight.weight)
+    
+    # Find closest weight after target date if nothing before
+    weight = db.query(models.Weight).filter(
+        models.Weight.user_id == user_id,
+        models.Weight.date_of_measurement > target_date
+    ).order_by(models.Weight.date_of_measurement).first()
+    
+    return float(weight.weight) if weight else None
 
 
 @router.get("/me", response_model=schemas.UserWithStats)
@@ -125,7 +155,7 @@ def get_my_stats(
     db: Session = Depends(get_db)
 ):
     """
-    Get detailed statistics about user's weight journey.
+    Get detailed statistics about user's weight journey with time-based changes.
     """
     # Get all weights ordered by date
     weights = db.query(models.Weight).filter(
@@ -142,7 +172,10 @@ def get_my_stats(
             total_change=None,
             average_weekly_change=None,
             current_bmi=None,
-            bmi_category=None
+            bmi_category=None,
+            weekly_change=None,
+            monthly_change=None,
+            six_month_change=None
         )
     
     first_weight = weights[0]
@@ -170,6 +203,24 @@ def get_my_stats(
         current_bmi = calculate_bmi(current_weight, float(current_user.height))
         bmi_category = get_bmi_category(current_bmi)
     
+    # Calculate time-based changes
+    today = date.today()
+    
+    # Weekly change (7 days ago)
+    week_ago = today - timedelta(days=7)
+    weight_week_ago = get_weight_at_date(db, current_user.id, week_ago)
+    weekly_change = round(current_weight - weight_week_ago, 1) if weight_week_ago else None
+    
+    # Monthly change (30 days ago)
+    month_ago = today - timedelta(days=30)
+    weight_month_ago = get_weight_at_date(db, current_user.id, month_ago)
+    monthly_change = round(current_weight - weight_month_ago, 1) if weight_month_ago else None
+    
+    # 6-month change (180 days ago)
+    six_months_ago = today - timedelta(days=180)
+    weight_six_months_ago = get_weight_at_date(db, current_user.id, six_months_ago)
+    six_month_change = round(current_weight - weight_six_months_ago, 1) if weight_six_months_ago else None
+    
     return schemas.WeightStats(
         total_entries=total_entries,
         first_entry_date=first_entry_date,
@@ -179,7 +230,10 @@ def get_my_stats(
         total_change=round(total_change, 2),
         average_weekly_change=average_weekly_change,
         current_bmi=current_bmi,
-        bmi_category=bmi_category
+        bmi_category=bmi_category,
+        weekly_change=weekly_change,
+        monthly_change=monthly_change,
+        six_month_change=six_month_change
     )
 
 
@@ -208,11 +262,11 @@ def get_dashboard(
         models.TargetWeight.status == "active"
     ).order_by(models.TargetWeight.date_of_target).all()
     
-    # Get weight trend (last 30 days)
-    thirty_days_ago = date.today() - timedelta(days=30)
+    # Get weight trend (last 180 days for 6-month view)
+    six_months_ago = date.today() - timedelta(days=180)
     trend_weights = db.query(models.Weight).filter(
         models.Weight.user_id == current_user.id,
-        models.Weight.date_of_measurement >= thirty_days_ago
+        models.Weight.date_of_measurement >= six_months_ago
     ).order_by(models.Weight.date_of_measurement).all()
     
     weight_trend = [

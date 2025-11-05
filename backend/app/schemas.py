@@ -139,7 +139,7 @@ class Login(BaseModel):
 # ============ Analytics Schemas ============
 
 class WeightStats(BaseModel):
-    """Statistics about weight entries."""
+    """Statistics about weight entries with time-based changes."""
     total_entries: int
     first_entry_date: Optional[date] = None
     last_entry_date: Optional[date] = None
@@ -149,6 +149,10 @@ class WeightStats(BaseModel):
     average_weekly_change: Optional[Decimal] = None
     current_bmi: Optional[float] = None
     bmi_category: Optional[str] = None
+    # Time-based changes
+    weekly_change: Optional[float] = None
+    monthly_change: Optional[float] = None
+    six_month_change: Optional[float] = None
 
 
 class WeightTrend(BaseModel):

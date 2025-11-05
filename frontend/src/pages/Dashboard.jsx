@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { userAPI } from '../services/api';
-import { TrendingUp, TrendingDown, Target, Scale, Calendar, Award } from 'lucide-react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { format } from 'date-fns';
+import { TrendingUp, TrendingDown, Target, Scale, Calendar, Award, ArrowDown } from 'lucide-react';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Brush } from 'recharts';
+import { format, subDays, subMonths } from 'date-fns';
 
 function Dashboard() {
   const [greeting, setGreeting] = useState('');
+  const [timeWindow, setTimeWindow] = useState('month'); // 'week', 'month', '6months'
 
   // Fetch dashboard data
   const { data: dashboardData, isLoading, error } = useQuery({
@@ -55,15 +56,68 @@ function Dashboard() {
     return 'text-red-600';
   };
 
-  // Calculate trend
-  const weightChange = stats.total_change || 0;
-  const isPositive = weightChange >= 0;
+  // Filter chart data based on selected time window
+  const getFilteredChartData = () => {
+    if (!weight_trend || weight_trend.length === 0) return [];
 
-  // Format chart data
-  const chartData = weight_trend.map(item => ({
-    date: format(new Date(item.date), 'MMM dd'),
-    weight: parseFloat(item.weight),
-  }));
+    const now = new Date();
+    let cutoffDate;
+
+    switch (timeWindow) {
+      case 'week':
+        cutoffDate = subDays(now, 7);
+        break;
+      case 'month':
+        cutoffDate = subMonths(now, 1);
+        break;
+      case '6months':
+        cutoffDate = subMonths(now, 6);
+        break;
+      default:
+        cutoffDate = subMonths(now, 1);
+    }
+
+    const filtered = weight_trend
+      .filter(item => new Date(item.date) >= cutoffDate)
+      .map(item => ({
+        date: format(new Date(item.date), 'MMM dd'),
+        fullDate: item.date,
+        weight: parseFloat(item.weight),
+      }));
+
+    // If no data in selected window, return all available data
+    return filtered.length > 0 ? filtered : weight_trend.map(item => ({
+      date: format(new Date(item.date), 'MMM dd'),
+      fullDate: item.date,
+      weight: parseFloat(item.weight),
+    }));
+  };
+
+  const chartData = getFilteredChartData();
+
+  // Render trend indicator using backend-calculated values
+  const TrendIndicator = ({ change, label }) => {
+    if (change === null || change === undefined) {
+      return (
+        <div className="flex items-center gap-1 text-xs text-gray-400">
+          <span>{label}</span>
+          <span>N/A</span>
+        </div>
+      );
+    }
+
+    const isPositive = change >= 0;
+    const Icon = isPositive ? TrendingUp : TrendingDown;
+    const colorClass = isPositive ? 'text-red-600' : 'text-green-600';
+
+    return (
+      <div className={`flex items-center gap-1 text-xs ${colorClass}`}>
+        <Icon className="w-3 h-3" />
+        <span className="font-medium">{Math.abs(parseFloat(change)).toFixed(1)} kg</span>
+        <span className="text-gray-500">{label}</span>
+      </div>
+    );
+  };
 
   return (
     <div className="space-y-6">
@@ -77,29 +131,34 @@ function Dashboard() {
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {/* Current Weight */}
+        {/* Enhanced Current Weight with Trends */}
         <div className="stat-card bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200">
           <div className="flex items-start justify-between">
-            <div>
+            <div className="flex-1">
               <p className="text-sm text-blue-600 font-medium">Current Weight</p>
               <p className="text-3xl font-bold text-blue-700 mt-2">
                 {stats.current_weight ? `${stats.current_weight} kg` : '--'}
               </p>
-              {stats.total_change && (
-                <div className="flex items-center mt-2 text-sm">
-                  {isPositive ? (
-                    <TrendingUp className="w-4 h-4 text-green-600 mr-1" />
-                  ) : (
-                    <TrendingDown className="w-4 h-4 text-red-600 mr-1" />
-                  )}
-                  <span className={isPositive ? 'text-green-600' : 'text-red-600'}>
-                    {isPositive ? '+' : ''}{stats.total_change} kg
+              
+              {/* Total change indicator */}
+              {/* {stats.total_change && (
+                <div className="flex items-center mt-2 text-sm pb-2 border-b border-blue-200">
+                  <ArrowDown className="w-4 h-4 text-red-600 mr-1" />
+                  <span className="text-red-600 font-medium">
+                    {Math.abs(parseFloat(stats.total_change)).toFixed(1)} kg
                   </span>
                   <span className="text-gray-500 ml-1">total</span>
                 </div>
-              )}
+              )} */}
+
+              {/* Trend indicators from backend */}
+              <div className="mt-2 space-y-1">
+                <TrendIndicator change={stats.weekly_change} label="week" />
+                <TrendIndicator change={stats.monthly_change} label="month" />
+                <TrendIndicator change={stats.six_month_change} label="6mo" />
+              </div>
             </div>
-            <Scale className="w-10 h-10 text-blue-400" />
+            <Scale className="w-10 h-10 text-blue-400 flex-shrink-0" />
           </div>
         </div>
 
@@ -155,17 +214,54 @@ function Dashboard() {
         </div>
       </div>
 
-      {/* Weight Trend Chart */}
+      {/* Weight Trend Chart with Time Window Selector */}
       {chartData.length > 0 && (
         <div className="card">
-          <h2 className="text-xl font-bold text-gray-800 mb-4">Weight Trend (Last 30 Days)</h2>
-          <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={chartData}>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-bold text-gray-800">Weight Trend</h2>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setTimeWindow('week')}
+                className={`px-3 py-1 text-sm rounded-lg transition-colors ${
+                  timeWindow === 'week'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                Week
+              </button>
+              <button
+                onClick={() => setTimeWindow('month')}
+                className={`px-3 py-1 text-sm rounded-lg transition-colors ${
+                  timeWindow === 'month'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                Month
+              </button>
+              <button
+                onClick={() => setTimeWindow('6months')}
+                className={`px-3 py-1 text-sm rounded-lg transition-colors ${
+                  timeWindow === '6months'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                6 Months
+              </button>
+            </div>
+          </div>
+          <ResponsiveContainer width="100%" height={350}>
+            <LineChart data={chartData} margin={{ top: 5, right: 30, left: 0, bottom: 20 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
               <XAxis 
                 dataKey="date" 
                 stroke="#6b7280"
                 style={{ fontSize: '12px' }}
+                angle={-45}
+                textAnchor="end"
+                height={60}
               />
               <YAxis 
                 stroke="#6b7280"
@@ -178,6 +274,7 @@ function Dashboard() {
                   border: '1px solid #e5e7eb',
                   borderRadius: '8px'
                 }}
+                formatter={(value) => [`${value} kg`, 'Weight']}
               />
               <Line 
                 type="monotone" 
@@ -187,8 +284,20 @@ function Dashboard() {
                 dot={{ fill: '#0ea5e9', r: 4 }}
                 activeDot={{ r: 6 }}
               />
+              {/* Brush for zoom and pan */}
+              {chartData.length > 10 && (
+                <Brush 
+                  dataKey="date" 
+                  height={30} 
+                  stroke="#0ea5e9"
+                  fill="#eff6ff"
+                />
+              )}
             </LineChart>
           </ResponsiveContainer>
+          <p className="text-xs text-gray-500 text-center mt-2">
+            {chartData.length > 10 && "Use the slider below to zoom and pan through your data"}
+          </p>
         </div>
       )}
 
@@ -272,48 +381,30 @@ function Dashboard() {
                 const totalChange = targetWeight - startWeight;
                 const currentChange = currentWeight - startWeight;
                 const progress = totalChange !== 0 
-                  ? Math.min(Math.abs((currentChange / totalChange) * 100), 100)
+                  ? Math.min(100, Math.max(0, (currentChange / totalChange) * 100))
                   : 0;
-                
-                const daysUntil = Math.ceil(
-                  (new Date(target.date_of_target) - new Date()) / (1000 * 60 * 60 * 24)
-                );
 
                 return (
                   <div key={target.id} className="p-4 bg-gray-50 rounded-lg">
-                    <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-start justify-between mb-2">
                       <div>
                         <p className="font-medium text-gray-800">
                           Target: {target.target_weight} kg
                         </p>
                         <p className="text-sm text-gray-500">
-                          {format(new Date(target.date_of_target), 'MMMM dd, yyyy')}
+                          Due: {format(new Date(target.date_of_target), 'MMM dd, yyyy')}
                         </p>
                       </div>
                       <span className="text-sm font-medium text-primary-600">
-                        {daysUntil > 0 ? `${daysUntil} days left` : 'Due today!'}
+                        {progress.toFixed(0)}%
                       </span>
                     </div>
-                    
-                    {/* Progress bar */}
-                    <div className="mt-3">
-                      <div className="flex items-center justify-between text-sm mb-1">
-                        <span className="text-gray-600">Progress</span>
-                        <span className="font-medium text-gray-800">{Math.round(progress)}%</span>
-                      </div>
-                      <div className="w-full bg-gray-200 rounded-full h-2">
-                        <div 
-                          className="bg-primary-600 h-2 rounded-full transition-all duration-500"
-                          style={{ width: `${progress}%` }}
-                        ></div>
-                      </div>
+                    <div className="w-full bg-gray-200 rounded-full h-2">
+                      <div 
+                        className="bg-primary-600 h-2 rounded-full transition-all duration-300"
+                        style={{ width: `${progress}%` }}
+                      />
                     </div>
-
-                    {target.reason && (
-                      <p className="mt-2 text-sm text-gray-500 italic">
-                        "{target.reason}"
-                      </p>
-                    )}
                   </div>
                 );
               })}
@@ -322,17 +413,23 @@ function Dashboard() {
         </div>
       </div>
 
-      {/* Motivational message */}
+      {/* Average Weekly Change */}
       {stats.average_weekly_change && (
-        <div className="card bg-gradient-to-r from-primary-50 to-blue-50 border-primary-200">
-          <div className="flex items-start gap-3">
-            <div className="bg-primary-100 rounded-full p-2">
-              <TrendingUp className="w-6 h-6 text-primary-600" />
+        <div className="card bg-gradient-to-br from-indigo-50 to-indigo-100 border-indigo-200">
+          <div className="text-center">
+            <p className="text-sm text-indigo-600 font-medium mb-2">Average Weekly Progress</p>
+            <div className="flex items-center justify-center gap-2">
+              {stats.average_weekly_change < 0 ? (
+                <TrendingDown className="w-8 h-8 text-green-600" />
+              ) : (
+                <TrendingUp className="w-8 h-8 text-red-600" />
+              )}
+              <p className={`text-4xl font-bold ${stats.average_weekly_change < 0 ? 'text-green-700' : 'text-red-700'}`}>
+                {stats.average_weekly_change < 0 ? '' : '+'}{stats.average_weekly_change} kg
+              </p>
             </div>
-            <div>
-              <h3 className="font-semibold text-gray-800 mb-1">Your Progress</h3>
-              <p className="text-gray-600">
-                You're averaging <strong>{Math.abs(stats.average_weekly_change)} kg per week</strong>.
+            <div className="mt-3">
+              <p className="text-sm text-gray-600">
                 {stats.average_weekly_change < 0 && " Keep up the great work! 💪"}
                 {stats.average_weekly_change > 0 && " Stay focused on your goals! 🎯"}
                 {stats.average_weekly_change === 0 && " Consistency is key! 🔥"}

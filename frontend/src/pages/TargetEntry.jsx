@@ -327,9 +327,19 @@ function TargetEntry() {
             const isCancelled = statusLc === 'failed' || statusLc === 'cancelled';
             const isPast = new Date(target.date_of_target) < new Date();
             // Prefer server-enriched values when available
-            const weightToLose = (target.final_weight !== undefined && target.final_weight !== null)
-              ? (parseFloat(target.target_weight) - parseFloat(target.final_weight)).toFixed(1)
-              : (currentWeight ? (parseFloat(target.target_weight) - currentWeight).toFixed(1) : null);
+            const finalWeightVal = (target.final_weight !== undefined && target.final_weight !== null)
+              ? parseFloat(target.final_weight)
+              : (stats?.current_weight ? parseFloat(stats.current_weight) : null);
+            // Server provides weight_to_lose as (current - target)
+            const weightToLoseNum = (target.weight_to_lose !== undefined && target.weight_to_lose !== null)
+              ? parseFloat(target.weight_to_lose)
+              : (finalWeightVal !== null ? (finalWeightVal - parseFloat(target.target_weight)) : null);
+            // Determine label for third column: show "Current" for active targets until the day AFTER target date
+            const targetDateObj = new Date(target.date_of_target);
+            const finalThreshold = new Date(targetDateObj);
+            finalThreshold.setDate(finalThreshold.getDate() + 1);
+            const showFinal = new Date() >= finalThreshold;
+            const thirdLabel = (isActive && !showFinal) ? 'Current' : 'Final';
 
             return (
               <div
@@ -378,7 +388,7 @@ function TargetEntry() {
 
                 {/* Details */}
                 <div className="space-y-3">
-                  {/* Weights Overview */}
+                  {/* Weights Overview */
                   <div className="grid grid-cols-3 gap-3 text-sm">
                     <div className="p-2 rounded bg-gray-50">
                       <div className="text-gray-500">Target</div>
@@ -389,7 +399,7 @@ function TargetEntry() {
                       <div className="font-semibold text-gray-800">{target.starting_weight ?? '-'} kg</div>
                     </div>
                     <div className="p-2 rounded bg-gray-50">
-                      <div className="text-gray-500">Final</div>
+                      <div className="text-gray-500">{thirdLabel}</div>
                       <div className="font-semibold text-gray-800">{target.final_weight ?? '-'} kg</div>
                     </div>
                   </div>
@@ -410,16 +420,16 @@ function TargetEntry() {
                   </div>
 
                   {/* Weight to Lose (for active targets) */}
-                  {isActive && weightToLose && (
+                  {isActive && weightToLoseNum !== null && (
                     <div className={`p-3 rounded-lg ${
-                      parseFloat(weightToLose) <= 0 ? 'bg-green-100' : 'bg-blue-100'
+                      weightToLoseNum <= 0 ? 'bg-green-100' : 'bg-blue-100'
                     }`}>
                       <p className={`text-sm font-medium ${
-                        parseFloat(weightToLose) <= 0 ? 'text-green-700' : 'text-blue-700'
+                        weightToLoseNum <= 0 ? 'text-green-700' : 'text-blue-700'
                       }`}>
-                        {parseFloat(weightToLose) <= 0 ? 
+                        {weightToLoseNum <= 0 ? 
                           '🎉 Goal achieved! Mark as completed?' : 
-                          `${Math.abs(weightToLose)} kg to go`
+                          `${weightToLoseNum.toFixed(1)} kg to go`
                         }
                       </p>
                     </div>

@@ -142,9 +142,15 @@ class Adherence(BaseModel):
 
 class SummaryResponse(BaseModel):
     trend_slope_kg_per_week: float
-    r2: float
+    trend_window_start: Optional[date] = None
+    trend_window_end: Optional[date] = None
+    trend_bmi_slope_per_week: Optional[float] = None
     volatility_kg: Optional[float] = None
+    volatility_window_start: Optional[date] = None
+    volatility_window_end: Optional[date] = None
     adherence: Adherence
+    adherence_window_start: Optional[date] = None
+    adherence_window_end: Optional[date] = None
     plateau_flag: bool
     milestones: Milestones
 
@@ -210,9 +216,10 @@ def get_summary(
         # Minimal structure for empty/insufficient data
         return SummaryResponse(
             trend_slope_kg_per_week=0.0,
-            r2=0.0,
             volatility_kg=None,
             adherence=Adherence(entries_per_week=0.0, avg_days_between=None, current_streak=0, longest_gap_days=0),
+            adherence_window_start=None,
+            adherence_window_end=None,
             plateau_flag=False,
             milestones=Milestones(),
         )
@@ -243,12 +250,21 @@ def get_summary(
     if use_recent:
         r_dates, r_vals = zip(*recent_points)
         r_xs = _daily_x_axis(list(r_dates))
-        slope_per_day, _, r2 = _linear_regression(r_xs, list(r_vals))
+        slope_per_day, _, _ = _linear_regression(r_xs, list(r_vals))
+        trend_start, trend_end = r_dates[0], r_dates[-1]
     else:
-        slope_per_day, _, r2 = _linear_regression(xs, ys)
+        slope_per_day, _, _ = _linear_regression(xs, ys)
+        trend_start, trend_end = dates[0], dates[-1]
     slope_per_week = slope_per_day * 7.0
 
-    diffs = _differences(ys)
+    # Volatility over the same trend window
+    if use_recent:
+        vol_vals = list(r_vals)
+        vol_start, vol_end = trend_start, trend_end
+    else:
+        vol_vals = ys
+        vol_start, vol_end = dates[0], dates[-1]
+    diffs = _differences(vol_vals)
     vol = round(pstdev(diffs), 3) if len(diffs) >= 2 else 0.0
 
     # Adherence metrics
@@ -274,6 +290,8 @@ def get_summary(
         current_streak=current_streak,
         longest_gap_days=longest_gap,
     )
+    adherence_window_start = unique_dates[0]
+    adherence_window_end = unique_dates[-1]
 
     # Milestones
     min_w = min(series, key=lambda p: p[1])
@@ -312,11 +330,31 @@ def get_summary(
         rng = max(recent_vals) - min(recent_vals)
         plateau_flag = (rng <= 0.2) and (abs(slope_per_day) <= 0.005)
 
+    # BMI slope over same trend window if height available
+    bmi_slope_week: Optional[float] = None
+    if current_user.height:
+        h_m = float(current_user.height) / 100.0
+        if h_m > 0:
+            if use_recent:
+                yb = [v / (h_m * h_m) for v in r_vals]
+                x_used = list(r_xs)
+            else:
+                yb = [v / (h_m * h_m) for v in ys]
+                x_used = list(xs)
+            b_slope_day, _, _ = _linear_regression(x_used, yb)
+            bmi_slope_week = round(b_slope_day * 7.0, 3)
+
     resp = SummaryResponse(
         trend_slope_kg_per_week=round(slope_per_week, 3),
-        r2=round(float(r2), 3),
+        trend_window_start=trend_start,
+        trend_window_end=trend_end,
+        trend_bmi_slope_per_week=bmi_slope_week,
         volatility_kg=vol,
+        volatility_window_start=vol_start,
+        volatility_window_end=vol_end,
         adherence=adherence,
+        adherence_window_start=adherence_window_start,
+        adherence_window_end=adherence_window_end,
         plateau_flag=plateau_flag,
         milestones=Milestones(
             min_weight=round(float(min_w[1]), 2),

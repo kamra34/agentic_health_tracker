@@ -615,9 +615,9 @@ function AdherenceCard({ summary, dashboard }) {
   const start = has ? format(new Date(summary.adherence_window_start), 'yyyy-MM-dd') : '--';
   const end = has ? format(new Date(summary.adherence_window_end), 'yyyy-MM-dd') : '--';
   const epw = summary ? summary.adherence.entries_per_week.toFixed(2) : '--';
-  const avgGap = summary?.adherence?.avg_days_between != null ? ${summary.adherence.avg_days_between} days : '--';
-  const streak = summary?.adherence?.current_streak != null ? ${summary.adherence.current_streak} days : '--';
-  const longestGap = summary?.adherence?.longest_gap_days != null ? ${summary.adherence.longest_gap_days} days : '--';
+  const avgGap = summary?.adherence?.avg_days_between != null ? `${summary.adherence.avg_days_between} days` : '--';
+  const streak = summary?.adherence?.current_streak != null ? `${summary.adherence.current_streak} days` : '--';
+  const longestGap = summary?.adherence?.longest_gap_days != null ? `${summary.adherence.longest_gap_days} days` : '--';
   const total = dashboard?.stats?.total_entries != null ? dashboard.stats.total_entries : undefined;
   let weeksCovered = '--';
   if (has) {
@@ -637,7 +637,7 @@ function AdherenceCard({ summary, dashboard }) {
         <div className="text-sm">Longest gap: {longestGap}</div>
       </div>
       <div className="mt-2 text-xs text-gray-600">
-        <div>Range: {start} - {end} {weeksCovered !== '--' && (~ weeks)}</div>
+        <div>Range: {start} - {end} {weeksCovered !== '--' && `(~${weeksCovered} weeks)`}</div>
         {total != null && <div>Total entries: {total}</div>}
       </div>
     </div>

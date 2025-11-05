@@ -4,14 +4,60 @@ Weight entry routes: CRUD operations for weight measurements.
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
-from typing import List
-from datetime import date
+from typing import List, Optional
+from datetime import date, datetime
 
 from ..database import get_db
 from .. import models, schemas
 from ..auth import get_current_user
 
 router = APIRouter(prefix="/api/weights", tags=["Weights"])
+
+
+# ---------- Estimation helpers ----------
+def _calculate_bmi(weight_kg: float, height_cm: Optional[float]) -> float:
+    if not height_cm or height_cm <= 0:
+        return 0.0
+    h_m = float(height_cm) / 100.0
+    return round(float(weight_kg) / (h_m * h_m), 2)
+
+
+def _age_on(date_of_birth: Optional[date], on_date: Optional[date] = None) -> int:
+    if not date_of_birth:
+        return 0
+    if on_date is None:
+        on_date = date.today()
+    years = on_date.year - date_of_birth.year - ((on_date.month, on_date.day) < (date_of_birth.month, date_of_birth.day))
+    return max(0, years)
+
+
+def _is_male(sex: Optional[str]) -> bool:
+    if not sex:
+        return False
+    s = str(sex).strip().lower()
+    return s.startswith("m")  # 'male' or 'm'
+
+
+def _estimate_body_fat_percent(bmi: float, age_years: int, sex: Optional[str]) -> Optional[float]:
+    # Deurenberg equation; sex: 1 for male, 0 for female
+    if bmi <= 0 or age_years <= 0:
+        return None
+    sex_flag = 1 if _is_male(sex) else 0
+    bf = 1.2 * bmi + 0.23 * age_years - 10.8 * sex_flag - 5.4
+    bf = max(3.0, min(60.0, bf))  # clamp
+    return round(bf, 2)
+
+
+def _estimate_lean_body_mass(weight_kg: float, height_cm: Optional[float], sex: Optional[str]) -> Optional[float]:
+    # Boer formula (lean body mass as a proxy for muscle mass)
+    if not height_cm:
+        return None
+    if _is_male(sex):
+        lbm = 0.407 * float(weight_kg) + 0.267 * float(height_cm) - 19.2
+    else:
+        lbm = 0.252 * float(weight_kg) + 0.473 * float(height_cm) - 48.3
+    lbm = max(0.0, min(float(weight_kg), lbm))
+    return round(lbm, 2)
 
 
 @router.post("", response_model=schemas.Weight, status_code=status.HTTP_201_CREATED)
@@ -46,6 +92,19 @@ def create_weight(
         muscle_mass=weight.muscle_mass,
         notes=weight.notes
     )
+
+    # Auto-estimate missing values if profile allows
+    height_cm = float(current_user.height) if current_user.height is not None else None
+    age_years = _age_on(current_user.date_of_birth, weight.date_of_measurement)
+    bmi = _calculate_bmi(float(weight.weight), height_cm)
+    if db_weight.body_fat_percentage is None:
+        est_bf = _estimate_body_fat_percent(bmi, age_years, current_user.sex)
+        if est_bf is not None:
+            db_weight.body_fat_percentage = est_bf
+    if db_weight.muscle_mass is None:
+        est_lbm = _estimate_lean_body_mass(float(weight.weight), height_cm, current_user.sex)
+        if est_lbm is not None:
+            db_weight.muscle_mass = est_lbm
     
     db.add(db_weight)
     db.commit()
@@ -172,11 +231,63 @@ def update_weight(
         weight.muscle_mass = weight_update.muscle_mass
     if weight_update.notes is not None:
         weight.notes = weight_update.notes
+
+    # Fill missing via estimates (based on possibly updated weight)
+    height_cm = float(current_user.height) if current_user.height is not None else None
+    age_years = _age_on(current_user.date_of_birth, weight.date_of_measurement)
+    bmi = _calculate_bmi(float(weight.weight), height_cm) if weight.weight is not None else 0.0
+    if weight.body_fat_percentage is None:
+        est_bf = _estimate_body_fat_percent(bmi, age_years, current_user.sex)
+        if est_bf is not None:
+            weight.body_fat_percentage = est_bf
+    if weight.muscle_mass is None:
+        est_lbm = _estimate_lean_body_mass(float(weight.weight), height_cm, current_user.sex)
+        if est_lbm is not None:
+            weight.muscle_mass = est_lbm
     
     db.commit()
     db.refresh(weight)
     
     return weight
+
+
+@router.post("/backfill-estimates")
+def backfill_estimates(
+    overwrite: bool = Query(False, description="If true, overwrite existing values"),
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Backfill body fat% and muscle mass (lean mass proxy) for existing entries.
+    Uses Deurenberg (body fat%) and Boer (lean mass) based on the user's profile.
+    - If overwrite=false: only fills missing values
+    - Age is calculated at the date of measurement
+    """
+    height_cm = float(current_user.height) if current_user.height is not None else None
+    if not height_cm:
+        raise HTTPException(status_code=400, detail="Cannot estimate without user height")
+
+    weights = db.query(models.Weight).filter(models.Weight.user_id == current_user.id).all()
+    updated = 0
+    for w in weights:
+        changed = False
+        age_years = _age_on(current_user.date_of_birth, w.date_of_measurement)
+        bmi = _calculate_bmi(float(w.weight), height_cm)
+        if overwrite or w.body_fat_percentage is None:
+            est_bf = _estimate_body_fat_percent(bmi, age_years, current_user.sex)
+            if est_bf is not None:
+                w.body_fat_percentage = est_bf
+                changed = True
+        if overwrite or w.muscle_mass is None:
+            est_lbm = _estimate_lean_body_mass(float(w.weight), height_cm, current_user.sex)
+            if est_lbm is not None:
+                w.muscle_mass = est_lbm
+                changed = True
+        if changed:
+            updated += 1
+    if updated:
+        db.commit()
+    return {"processed": len(weights), "updated": updated}
 
 
 @router.delete("/{weight_id}", status_code=status.HTTP_204_NO_CONTENT)

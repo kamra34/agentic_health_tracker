@@ -18,6 +18,20 @@ function Dashboard() {
     },
   });
 
+  // Hooks must be declared before any early returns
+  const queryClient = useQueryClient();
+  const [quickWeight, setQuickWeight] = useState('');
+  const [quickNotes, setQuickNotes] = useState('');
+  const addQuickMutation = useMutation({
+    mutationFn: (data) => weightAPI.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries(['dashboard']);
+      queryClient.invalidateQueries(['weights']);
+      setQuickWeight('');
+      setQuickNotes('');
+    },
+  });
+
   // Set greeting based on time
   useEffect(() => {
     const hour = new Date().getHours();
@@ -94,20 +108,6 @@ function Dashboard() {
 
   const chartData = getFilteredChartData();
 
-  // Quick check-in state
-  const [quickWeight, setQuickWeight] = useState('');
-  const [quickNotes, setQuickNotes] = useState('');
-  const queryClient = useQueryClient();
-  const addQuickMutation = useMutation({
-    mutationFn: (data) => weightAPI.create(data),
-    onSuccess: () => {
-      queryClient.invalidateQueries(['dashboard']);
-      queryClient.invalidateQueries(['weights']);
-      setQuickWeight('');
-      setQuickNotes('');
-    },
-  });
-
   const todayISO = new Date().toISOString().split('T')[0];
   const userHeightCm = user?.height ? parseFloat(user.height) : null;
   const quickBMI = (quickWeight && userHeightCm)
@@ -176,11 +176,11 @@ function Dashboard() {
               {/* Total change indicator */}
               {stats.total_change && (
                 <div className="flex items-center mt-2 text-sm pb-2 border-b border-blue-200">
-                  <ArrowDown className="w-4 h-4 text-red-600 mr-1" />
+                  {/* <ArrowDown className="w-4 h-4 text-red-600 mr-1" />
                   <span className="text-red-600 font-medium">
                     {Math.abs(parseFloat(stats.total_change)).toFixed(1)} kg
                   </span>
-                  <span className="text-gray-500 ml-1">total</span>
+                  <span className="text-gray-500 ml-1">total</span> */}
                 </div>
               )}
 
@@ -188,7 +188,7 @@ function Dashboard() {
               <div className="mt-2 space-y-1">
                 <TrendIndicator change={stats.weekly_change} label="week" />
                 <TrendIndicator change={stats.monthly_change} label="month" />
-                <TrendIndicator change={stats.six_month_change} label="6mo" />
+                <TrendIndicator change={stats.six_month_change} label="6 month" />
               </div>
             </div>
             <Scale className="w-10 h-10 text-blue-400 flex-shrink-0" />

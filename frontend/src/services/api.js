@@ -93,4 +93,11 @@ export const adminAPI = {
   setUserPassword: (userId, newPassword) => api.post(`/api/admin/users/${userId}/set-password`, null, { params: { new_password: newPassword } }),
 };
 
+// Insights APIs
+export const insightsAPI = {
+  getSummary: () => api.get('/api/insights/summary'),
+  getForecast: (metric = 'weight', horizon = 60) =>
+    api.get('/api/insights/forecast', { params: { metric, horizon } }),
+};
+
 export default api;

@@ -9,6 +9,7 @@ from contextlib import asynccontextmanager
 from .config import settings
 from .database import engine, Base
 from .routers import auth, users, weights, targets, admin
+from .routers import insights
 
 
 # Create database tables on startup
@@ -46,6 +47,7 @@ app.include_router(users.router)
 app.include_router(weights.router)
 app.include_router(targets.router)
 app.include_router(admin.router)
+app.include_router(insights.router)
 
 
 @app.get("/")

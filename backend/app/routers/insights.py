@@ -150,6 +150,7 @@ class SummaryResponse(BaseModel):
     trend_start_weight: Optional[float] = None
     trend_end_weight: Optional[float] = None
     volatility_kg: Optional[float] = None
+    volatility_count: Optional[int] = None
     volatility_window_start: Optional[date] = None
     volatility_window_end: Optional[date] = None
     adherence: Adherence
@@ -265,18 +266,20 @@ def get_summary(
 
     # Volatility over the same trend window
     if trend_start and trend_end:
-        # Volatility over the same trend window
-        if recent_points and trend_start >= recent_points[0][0]:
-            # use recent subset
-            vol_vals = [v for (d, v) in recent_points if trend_start <= d <= trend_end]
-            vol_start, vol_end = trend_start, trend_end
-        else:
-            vol_vals = ys
-            vol_start, vol_end = dates[0], dates[-1]
-        diffs = _differences(vol_vals)
-        vol = round(pstdev(diffs), 3) if len(diffs) >= 2 else 0.0
+        # Volatility over the same trend window; compute daily change std
+        # by normalizing adjacent differences by day gaps.
+        window_series = [(d, v) for (d, v) in series if trend_start <= d <= trend_end]
+        daily_changes: List[float] = []
+        for (d1, v1), (d2, v2) in zip(window_series[:-1], window_series[1:]):
+            gap = (d2 - d1).days
+            if gap > 0:
+                daily_changes.append((v2 - v1) / gap)
+        vol = round(pstdev(daily_changes), 3) if len(daily_changes) >= 2 else 0.0
+        vol_count = len(daily_changes)
+        vol_start, vol_end = trend_start, trend_end
     else:
         vol = 0.0
+        vol_count = None
         vol_start, vol_end = None, None
 
     # Adherence metrics
@@ -368,6 +371,7 @@ def get_summary(
         trend_start_weight=round(start_weight, 2) if start_weight is not None else None,
         trend_end_weight=round(end_weight, 2) if end_weight is not None else None,
         volatility_kg=vol,
+        volatility_count=vol_count,
         volatility_window_start=vol_start,
         volatility_window_end=vol_end,
         adherence=adherence,

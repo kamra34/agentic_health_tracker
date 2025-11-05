@@ -175,6 +175,8 @@ class WeightTrend(BaseModel):
     date: date
     weight: Decimal
     moving_average: Optional[Decimal] = None
+    body_fat_percentage: Optional[Decimal] = None
+    muscle_mass: Optional[Decimal] = None
 
 
 # ============ Dashboard Schema ============

@@ -7,7 +7,8 @@ import { format, subDays, subMonths } from 'date-fns';
 
 function Dashboard() {
   const [greeting, setGreeting] = useState('');
-  const [timeWindow, setTimeWindow] = useState('month'); // 'week', 'month', '6months'
+  const [timeWindow, setTimeWindow] = useState('month'); // 'week', 'month', '6months', 'all'
+  const [metric, setMetric] = useState('weight'); // 'weight' | 'bmi' | 'body_fat' | 'muscle'
 
   // Fetch dashboard data
   const { data: dashboardData, isLoading, error } = useQuery({
@@ -87,26 +88,49 @@ function Dashboard() {
       case '6months':
         cutoffDate = subMonths(now, 6);
         break;
+      case 'all':
+        cutoffDate = new Date(0); // include everything
+        break;
       default:
         cutoffDate = subMonths(now, 1);
     }
 
-    const filtered = weight_trend
-      .filter(item => new Date(item.date) >= cutoffDate)
-      .map(item => ({
+    const toPoint = (item) => {
+      const base = {
         date: format(new Date(item.date), 'MMM dd'),
         fullDate: item.date,
-        weight: parseFloat(item.weight),
-      }));
+      };
+      if (metric === 'weight') {
+        return { ...base, value: parseFloat(item.weight), unit: 'kg' };
+      }
+      if (metric === 'bmi') {
+        if (!user?.height) return null;
+        const h = parseFloat(user.height) / 100;
+        const v = parseFloat(item.weight) / (h * h);
+        return { ...base, value: parseFloat(v.toFixed(2)), unit: '' };
+      }
+      if (metric === 'body_fat') {
+        const v = item.body_fat_percentage != null ? parseFloat(item.body_fat_percentage) : null;
+        return v != null ? { ...base, value: v, unit: '%' } : null;
+      }
+      if (metric === 'muscle') {
+        const v = item.muscle_mass != null ? parseFloat(item.muscle_mass) : null;
+        return v != null ? { ...base, value: v, unit: 'kg' } : null;
+      }
+      return null;
+    };
 
-    return filtered.length > 0 ? filtered : weight_trend.map(item => ({
-      date: format(new Date(item.date), 'MMM dd'),
-      fullDate: item.date,
-      weight: parseFloat(item.weight),
-    }));
+    const filtered = weight_trend
+      .filter(item => new Date(item.date) >= cutoffDate)
+      .map(toPoint)
+      .filter(Boolean);
+
+    const all = weight_trend.map(toPoint).filter(Boolean);
+    return filtered.length > 0 ? filtered : all;
   };
 
   const chartData = getFilteredChartData();
+  const currentUnit = chartData.length > 0 ? (chartData[0].unit || '') : '';
 
   const todayISO = new Date().toISOString().split('T')[0];
   const userHeightCm = user?.height ? parseFloat(user.height) : null;
@@ -324,11 +348,29 @@ function Dashboard() {
         </div>
       </div>
 
-      {/* Weight Trend Chart with Time Window Selector */}
+      {/* Trend Chart with Metric + Time Window Selector */}
       {chartData.length > 0 && (
         <div className="card">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-bold text-gray-800">Weight Trend</h2>
+            <div className="flex items-center gap-3">
+              <h2 className="text-xl font-bold text-gray-800">Trend</h2>
+              <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
+                {[
+                  { key: 'weight', label: 'Weight' },
+                  { key: 'bmi', label: 'BMI' },
+                  { key: 'body_fat', label: 'Fat %' },
+                  { key: 'muscle', label: 'Muscle' },
+                ].map(opt => (
+                  <button
+                    key={opt.key}
+                    onClick={() => setMetric(opt.key)}
+                    className={`px-3 py-1 text-sm rounded-md ${metric === opt.key ? 'bg-white shadow text-gray-800' : 'text-gray-600 hover:text-gray-800'}`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
             <div className="flex gap-2">
               <button
                 onClick={() => setTimeWindow('week')}
@@ -360,6 +402,16 @@ function Dashboard() {
               >
                 6 Months
               </button>
+              <button
+                onClick={() => setTimeWindow('all')}
+                className={`px-3 py-1 text-sm rounded-lg transition-colors ${
+                  timeWindow === 'all'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                All
+              </button>
             </div>
           </div>
           <ResponsiveContainer width="100%" height={350}>
@@ -384,11 +436,15 @@ function Dashboard() {
                   border: '1px solid #e5e7eb',
                   borderRadius: '8px'
                 }}
-                formatter={(value) => [`${value} kg`, 'Weight']}
+                formatter={(value) => {
+                  const suffix = metric === 'body_fat' ? '%' : (metric === 'bmi' ? '' : ' kg');
+                  const label = metric === 'weight' ? 'Weight' : metric === 'bmi' ? 'BMI' : metric === 'body_fat' ? 'Body Fat' : 'Muscle Mass';
+                  return [`${value}${suffix}`, label];
+                }}
               />
               <Line 
                 type="monotone" 
-                dataKey="weight" 
+                dataKey="value" 
                 stroke="#0ea5e9" 
                 strokeWidth={3}
                 dot={{ fill: '#0ea5e9', r: 4 }}

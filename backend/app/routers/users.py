@@ -398,7 +398,9 @@ def get_dashboard(
         schemas.WeightTrend(
             date=w.date_of_measurement,
             weight=w.weight,
-            moving_average=None  # Can add moving average calculation later
+            moving_average=None,  # Can add moving average calculation later
+            body_fat_percentage=getattr(w, 'body_fat_percentage', None),
+            muscle_mass=getattr(w, 'muscle_mass', None),
         ) for w in trend_weights
     ]
     

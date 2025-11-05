@@ -141,10 +141,14 @@ class Adherence(BaseModel):
 
 
 class SummaryResponse(BaseModel):
-    trend_slope_kg_per_week: float
+    trend_slope_kg_per_day: Optional[float] = None
+    trend_slope_kg_per_week: Optional[float] = None
+    trend_slope_kg_per_month: Optional[float] = None
     trend_window_start: Optional[date] = None
     trend_window_end: Optional[date] = None
     trend_bmi_slope_per_week: Optional[float] = None
+    trend_start_weight: Optional[float] = None
+    trend_end_weight: Optional[float] = None
     volatility_kg: Optional[float] = None
     volatility_window_start: Optional[date] = None
     volatility_window_end: Optional[date] = None
@@ -215,7 +219,9 @@ def get_summary(
     if len(series) < 2:
         # Minimal structure for empty/insufficient data
         return SummaryResponse(
-            trend_slope_kg_per_week=0.0,
+            trend_slope_kg_per_day=None,
+            trend_slope_kg_per_week=None,
+            trend_slope_kg_per_month=None,
             volatility_kg=None,
             adherence=Adherence(entries_per_week=0.0, avg_days_between=None, current_streak=0, longest_gap_days=0),
             adherence_window_start=None,
@@ -228,44 +234,50 @@ def get_summary(
     xs = _daily_x_axis(list(dates))
     ys = list(values)
 
-    # Compute trend limited to recent window (last 35 days) with min quality
-    window_days = 35
+    # Compute trend limited to recent window: at most last 90 days and at least 14 days
+    max_window_days = 90
     min_span_days = 14
-    min_weeks = 2
-    min_entries_per_week = 3
-
-    cutoff = dates[-1] - timedelta(days=window_days - 1)
+    cutoff = dates[-1] - timedelta(days=max_window_days - 1)
     recent_points = [(d, v) for d, v in zip(dates, ys) if d >= cutoff]
-    # count entries per ISO week among recent points
-    week_counts: Dict[Tuple[int, int], int] = {}
-    for d, _ in recent_points:
-        iso = d.isocalendar()
-        key = (iso[0], iso[1])  # year, week
-        week_counts[key] = week_counts.get(key, 0) + 1
-    qualified_weeks = sum(1 for c in week_counts.values() if c >= min_entries_per_week)
-    span_days = (recent_points[-1][0] - recent_points[0][0]).days if len(recent_points) >= 2 else 0
-
-    use_recent = qualified_weeks >= min_weeks and span_days >= min_span_days
-
-    if use_recent:
-        r_dates, r_vals = zip(*recent_points)
-        r_xs = _daily_x_axis(list(r_dates))
-        slope_per_day, _, _ = _linear_regression(r_xs, list(r_vals))
-        trend_start, trend_end = r_dates[0], r_dates[-1]
-    else:
-        slope_per_day, _, _ = _linear_regression(xs, ys)
-        trend_start, trend_end = dates[0], dates[-1]
-    slope_per_week = slope_per_day * 7.0
+    slope_per_day = None
+    trend_start = None
+    trend_end = None
+    start_weight = None
+    end_weight = None
+    if len(recent_points) >= 2:
+        span_days = (recent_points[-1][0] - recent_points[0][0]).days
+        if span_days >= min_span_days:
+            r_dates, r_vals = zip(*recent_points)
+            r_xs = _daily_x_axis(list(r_dates))
+            s, _, _ = _linear_regression(r_xs, list(r_vals))
+            slope_per_day = s
+            trend_start, trend_end = r_dates[0], r_dates[-1]
+            start_weight, end_weight = float(r_vals[0]), float(r_vals[-1])
+    if slope_per_day is None:
+        # Fallback to full series; if still not enough span, leave slopes None
+        if len(xs) >= 2 and (dates[-1] - dates[0]).days >= min_span_days:
+            s, _, _ = _linear_regression(xs, ys)
+            slope_per_day = s
+            trend_start, trend_end = dates[0], dates[-1]
+            start_weight, end_weight = float(ys[0]), float(ys[-1])
+    slope_per_week = slope_per_day * 7.0 if slope_per_day is not None else None
+    slope_per_month = slope_per_day * 30.0 if slope_per_day is not None else None
 
     # Volatility over the same trend window
-    if use_recent:
-        vol_vals = list(r_vals)
-        vol_start, vol_end = trend_start, trend_end
+    if trend_start and trend_end:
+        # Volatility over the same trend window
+        if recent_points and trend_start >= recent_points[0][0]:
+            # use recent subset
+            vol_vals = [v for (d, v) in recent_points if trend_start <= d <= trend_end]
+            vol_start, vol_end = trend_start, trend_end
+        else:
+            vol_vals = ys
+            vol_start, vol_end = dates[0], dates[-1]
+        diffs = _differences(vol_vals)
+        vol = round(pstdev(diffs), 3) if len(diffs) >= 2 else 0.0
     else:
-        vol_vals = ys
-        vol_start, vol_end = dates[0], dates[-1]
-    diffs = _differences(vol_vals)
-    vol = round(pstdev(diffs), 3) if len(diffs) >= 2 else 0.0
+        vol = 0.0
+        vol_start, vol_end = None, None
 
     # Adherence metrics
     unique_dates = sorted(set(dates))
@@ -335,20 +347,26 @@ def get_summary(
     if current_user.height:
         h_m = float(current_user.height) / 100.0
         if h_m > 0:
-            if use_recent:
-                yb = [v / (h_m * h_m) for v in r_vals]
-                x_used = list(r_xs)
-            else:
-                yb = [v / (h_m * h_m) for v in ys]
-                x_used = list(xs)
-            b_slope_day, _, _ = _linear_regression(x_used, yb)
-            bmi_slope_week = round(b_slope_day * 7.0, 3)
+            if trend_start and trend_end:
+                # pick window matching trend
+                idx_start = next((i for i,(d,_) in enumerate(series) if d == trend_start), 0)
+                idx_end = next((i for i,(d,_) in enumerate(series) if d == trend_end), len(series)-1)
+                win_dates = [d for d,_ in series[idx_start:idx_end+1]]
+                win_vals = [v for _,v in series[idx_start:idx_end+1]]
+                xb = _daily_x_axis(win_dates)
+                yb = [v / (h_m * h_m) for v in win_vals]
+                b_slope_day, _, _ = _linear_regression(xb, yb)
+                bmi_slope_week = round(b_slope_day * 7.0, 3)
 
     resp = SummaryResponse(
-        trend_slope_kg_per_week=round(slope_per_week, 3),
+        trend_slope_kg_per_day=round(slope_per_day, 3) if slope_per_day is not None else None,
+        trend_slope_kg_per_week=round(slope_per_week, 3) if slope_per_week is not None else None,
+        trend_slope_kg_per_month=round(slope_per_month, 3) if slope_per_month is not None else None,
         trend_window_start=trend_start,
         trend_window_end=trend_end,
         trend_bmi_slope_per_week=bmi_slope_week,
+        trend_start_weight=round(start_weight, 2) if start_weight is not None else None,
+        trend_end_weight=round(end_weight, 2) if end_weight is not None else None,
         volatility_kg=vol,
         volatility_window_start=vol_start,
         volatility_window_end=vol_end,

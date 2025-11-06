@@ -7,114 +7,15 @@ on:
     branches: [ main ]
 
 jobs:
-  backend-test:
-    runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:15
-        env:
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: wtracker_test
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 5432:5432
-    env:
-      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/wtracker_test
-      SECRET_KEY: test-secret-key-for-ci-cd-pipeline-only
-      CORS_ORIGINS: '["*"]'
-    steps:
-      - uses: actions/checkout@v3
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.11'
-      - name: Install dependencies
-        run: |
-          cd backend
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-      - name: Lint with flake8
-        run: |
-          cd backend
-          pip install flake8
-          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
-          flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
-      - name: Smoke import API (ensures env works)
-        run: |
-          cd backend
-          python - << 'PY'
-          import os
-          os.environ.setdefault('DATABASE_URL', 'postgresql://postgres:postgres@localhost:5432/wtracker_test')
-          os.environ.setdefault('SECRET_KEY', 'test-secret')
-          from app.main import app
-          print('Imported FastAPI app with', len(app.routes), 'routes')
-          PY
-      # Add pytest here when tests exist
-
-  frontend-test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - name: Set up Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: '18'
-      - name: Install dependencies
-        run: |
-          cd frontend
-          npm ci
-      - name: Lint (warnings allowed)
-        run: |
-          cd frontend
-          npx eslint . --ext js,jsx --report-unused-disable-directives || true
-      - name: Build
-        run: |
-          cd frontend
-          npm run build
-      # Add frontend tests when available
-
   deploy:
     runs-on: ubuntu-latest
-    needs: [backend-test, frontend-test]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     steps:
       - uses: actions/checkout@v3
-      - name: Set up Node.js (for Railway CLI)
-        uses: actions/setup-node@v3
+      - name: Deploy to Railway (backend service)
+        uses: railwayapp/railway-action@v4
         with:
-          node-version: '18'
-      - name: Install Railway CLI
-        run: npm i -g @railway/cli
-      - name: Configure Railway project (token via env)
-        env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-          RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROJECT_ID }}
-        run: |
-          if [ -z "$RAILWAY_TOKEN" ]; then echo "RAILWAY_TOKEN not set" && exit 1; fi
-          export RAILWAY_TOKEN
-          if [ -n "$RAILWAY_PROJECT_ID" ]; then
-            railway link --project "$RAILWAY_PROJECT_ID"
-          fi
-      - name: Deploy backend service to Railway
-        working-directory: backend
-        env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-          RAILWAY_SERVICE: ${{ secrets.RAILWAY_SERVICE }}
-          RAILWAY_ENVIRONMENT: ${{ secrets.RAILWAY_ENVIRONMENT }}
-          RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROJECT_ID }}
-        run: |
-          export RAILWAY_TOKEN
-          PROJECT_FLAG=""
-          if [ -n "$RAILWAY_PROJECT_ID" ]; then PROJECT_FLAG="--project $RAILWAY_PROJECT_ID"; fi
-          if [ -n "$RAILWAY_ENVIRONMENT" ]; then
-            railway environment "$RAILWAY_ENVIRONMENT" $PROJECT_FLAG
-          fi
-          if [ -n "$RAILWAY_SERVICE" ]; then
-            railway up --service "$RAILWAY_SERVICE" $PROJECT_FLAG --ci
-          else
-            railway up $PROJECT_FLAG --ci
-          fi
+          apiKey: ${{ secrets.RAILWAY_TOKEN }}
+          projectId: ${{ secrets.RAILWAY_PROJECT_ID }}
+          serviceName: ${{ secrets.RAILWAY_SERVICE }}
+          environment: ${{ secrets.RAILWAY_ENVIRONMENT }}

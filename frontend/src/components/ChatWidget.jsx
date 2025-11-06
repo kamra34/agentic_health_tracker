@@ -28,17 +28,14 @@ function ChatWidget() {
         if (Array.isArray(parsed?.messages)) setMessages(parsed.messages);
         if (typeof parsed?.open === 'boolean') setOpen(parsed.open);
       }
-    } catch (_) {
-      // ignore
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    } catch (_) { /* ignore */ }
   }, [storageKey]);
 
   useEffect(() => {
     if (open && messages.length === 0) {
       setMessages([{ role: 'assistant', content: 'Hi! Ask me anything about your weights, goals, streaks, or trends. I will answer using your data.' }]);
     }
-  }, [open]);
+  }, [open, messages.length]);
 
   useEffect(() => {
     try {
@@ -47,7 +44,7 @@ function ChatWidget() {
       } else {
         endRef.current?.scrollIntoView({ behavior: 'smooth' });
       }
-    } catch (_) {}
+    } catch (_) { /* ignore */ }
   }, [messages, open, events]);
 
   // Persist state to localStorage whenever it changes
@@ -160,15 +157,7 @@ function ChatWidget() {
     queryClient.invalidateQueries({ queryKey: ['insights'] });
   };
 
-  const titleForAgent = (agent) => {
-    const a = (agent || '').toLowerCase();
-    if (a === 'planner') return 'Planning';
-    if (a === 'sql') return 'Querying data';
-    if (a === 'analytics') return 'Analyzing';
-    if (a === 'action') return 'Applying changes';
-    if (a === 'admin') return 'Admin action';
-    return 'Working';
-  };
+  // titleForAgent removed (unused)
 
   const onKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {

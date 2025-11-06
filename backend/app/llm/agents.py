@@ -221,9 +221,66 @@ class AnalyticsAgent(BaseAgent):
                     },
                 },
             },
+            {
+                "type": "function",
+                "function": {
+                    "name": "user_streaks",
+                    "description": "Compute current and longest streaks of consecutive weight-entry days, with start/end dates.",
+                    "parameters": {"type": "object", "properties": {}, "required": []},
+                },
+            },
         ]
 
     def execute(self, tool_name: str, args: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        if tool_name == "user_streaks":
+            # Fetch all weight dates for the user
+            rows = self.db.query(models.Weight).filter(models.Weight.user_id == self.user.id).all()
+            if not rows:
+                return {"error": "No weights found"}
+            # Unique dates as date objects
+            dates = sorted({r.date_of_measurement for r in rows if getattr(r, 'date_of_measurement', None) is not None})
+            if not dates:
+                return {"error": "No valid dates found"}
+            # Longest streak over entire history
+            longest_len = 1
+            longest_end = dates[0]
+            cur_len = 1
+            cur_start = dates[0]
+            prev = dates[0]
+            for d in dates[1:]:
+                if (d - prev).days == 1:
+                    cur_len += 1
+                else:
+                    if cur_len > longest_len:
+                        longest_len = cur_len
+                        longest_end = prev
+                    cur_len = 1
+                    cur_start = d
+                prev = d
+            # Finalize longest with tail segment
+            if cur_len > longest_len:
+                longest_len = cur_len
+                longest_end = prev
+            longest_start = longest_end - timedelta(days=longest_len - 1)
+
+            # Current streak ending at last recorded day
+            last_day = dates[-1]
+            current_len = 1
+            cursor = last_day - timedelta(days=1)
+            while cursor in dates:
+                current_len += 1
+                cursor = cursor - timedelta(days=1)
+            current_end = last_day
+            current_start = current_end - timedelta(days=current_len - 1)
+
+            return {
+                "current_streak": int(current_len),
+                "current_start": current_start.isoformat(),
+                "current_end": current_end.isoformat(),
+                "longest_streak": int(longest_len),
+                "longest_start": longest_start.isoformat(),
+                "longest_end": longest_end.isoformat(),
+            }
         if tool_name == "user_avg_weight_change":
             d_from = parse_date_str(args.get("date_from")) if args.get("date_from") else None
             d_to = parse_date_str(args.get("date_to")) if args.get("date_to") else None

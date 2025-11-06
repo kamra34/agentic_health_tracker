@@ -631,6 +631,19 @@ function Dashboard() {
                 const progress = target.progress_percentage || 0;
                 const isOnTrack = target.days_remaining > 0;
                 const daysText = Math.abs(target.days_remaining);
+                // Time progress (from created_date to date_of_target)
+                const msPerDay = 24 * 60 * 60 * 1000;
+                const createdAt = target.created_date ? new Date(target.created_date) : null;
+                const targetDate = target.date_of_target ? new Date(target.date_of_target) : null;
+                const now = new Date();
+                let timeProgress = null;
+                let passedDays = null;
+                let totalDays = null;
+                if (createdAt && targetDate && !isNaN(createdAt) && !isNaN(targetDate)) {
+                  totalDays = Math.max(1, Math.ceil((targetDate - createdAt) / msPerDay));
+                  passedDays = Math.max(0, Math.min(totalDays, Math.ceil((now - createdAt) / msPerDay)));
+                  timeProgress = Math.max(0, Math.min(100, Math.round((passedDays / totalDays) * 100)));
+                }
                 
                 return (
                   <div key={target.id} className="p-4 bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg border border-gray-200">
@@ -647,15 +660,18 @@ function Dashboard() {
                           Target: {format(new Date(target.date_of_target), 'MMM dd, yyyy')}
                         </p>
                       </div>
-                      <div className="text-right">
-                        <span className={`text-2xl font-bold ${progress >= 100 ? 'text-green-600' : 'text-primary-600'}`}>
-                          {progress.toFixed(0)}%
-                        </span>
-                      </div>
+                      {/* Weight progress percent moved below with the bar for clarity */}
                     </div>
 
-                    {/* Progress Bar */}
-                    <div className="w-full bg-gray-200 rounded-full h-3 mb-3">
+                    {/* Weight Progress */}
+                    <div className="flex items-center justify-between text-xs text-gray-600 mb-1">
+                      <div className="flex items-center gap-1">
+                        <Scale className="w-3.5 h-3.5 text-primary-600" />
+                        <span>Weight Progress</span>
+                      </div>
+                      <div className={`font-medium ${progress >= 100 ? 'text-green-700' : 'text-primary-700'}`}>{progress.toFixed(0)}%</div>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-3">
                       <div 
                         className={`h-3 rounded-full transition-all duration-500 ${
                           progress >= 100 ? 'bg-green-500' : 'bg-primary-600'
@@ -663,33 +679,38 @@ function Dashboard() {
                         style={{ width: `${Math.min(progress, 100)}%` }}
                       />
                     </div>
-
-                    {/* Progress Details */}
-                    <div className="grid grid-cols-2 gap-3 text-sm">
-                      {/* Weight to Lose */}
-                      <div className="flex items-center gap-2">
-                        <Scale className="w-4 h-4 text-gray-500" />
-                        <div>
-                          <p className="text-gray-500 text-xs">To Go</p>
-                          <p className="font-semibold text-gray-700">
-                            {Math.abs(parseFloat(target.weight_to_lose || 0)).toFixed(1)} kg
-                          </p>
-                        </div>
-                      </div>
-
-                      {/* Days Remaining */}
-                      <div className="flex items-center gap-2">
-                        <Clock className={`w-4 h-4 ${isOnTrack ? 'text-green-500' : 'text-orange-500'}`} />
-                        <div>
-                          <p className="text-gray-500 text-xs">
-                            {isOnTrack ? 'Remaining' : 'Overdue'}
-                          </p>
-                          <p className={`font-semibold ${isOnTrack ? 'text-green-700' : 'text-orange-700'}`}>
-                            {daysText} days
-                          </p>
-                        </div>
-                      </div>
+                    <div className="mt-1 text-xs text-gray-600 flex items-center gap-1">
+                      <Scale className="w-3.5 h-3.5 text-gray-500" />
+                      <span>To Go:</span>
+                      <span className="font-semibold text-gray-700">{Math.abs(parseFloat(target.weight_to_lose || 0)).toFixed(1)} kg</span>
                     </div>
+
+                    {/* Time Progress */}
+                    {timeProgress != null && (
+                      <>
+                        <div className="flex items-center justify-between text-xs text-gray-600 mt-3 mb-1">
+                          <div className="flex items-center gap-1">
+                            <Clock className="w-3.5 h-3.5 text-indigo-600" />
+                            <span>Time Progress</span>
+                          </div>
+                          <div className="font-medium text-indigo-800">{timeProgress}%</div>
+                        </div>
+                        <div className="w-full bg-gray-200 rounded-full h-2">
+                          <div
+                            className={`h-2 rounded-full transition-all duration-500 ${timeProgress >= 100 ? 'bg-orange-500' : 'bg-indigo-500'}`}
+                            style={{ width: `${Math.min(timeProgress, 100)}%` }}
+                          />
+                        </div>
+                        <div className="mt-1 text-xs text-gray-600">
+                          <span className="inline-flex items-center gap-1">
+                            <Clock className={`w-3.5 h-3.5 ${isOnTrack ? 'text-green-600' : 'text-orange-600'}`} />
+                            <span>{isOnTrack ? 'Remaining' : 'Overdue'}:</span>
+                            <span className={`font-semibold ${isOnTrack ? 'text-green-700' : 'text-orange-700'}`}>{daysText} days</span>
+                          </span>
+                          <span className="ml-2 text-gray-500">({passedDays}d passed · {totalDays - passedDays}d left)</span>
+                        </div>
+                      </>
+                    )}
 
               {/* Estimated Completion (if available) */}
               {target.estimated_completion && (

@@ -54,7 +54,7 @@ def list_targets(
     
     - **skip**: Number of records to skip
     - **limit**: Maximum number of records to return
-    - **status_filter**: Filter by status (active, completed, cancelled)
+    - **status_filter**: Filter by status (active, completed, failed, cancelled)
     """
     query = db.query(models.TargetWeight).filter(
         models.TargetWeight.user_id == current_user.id
@@ -66,7 +66,8 @@ def list_targets(
         synonyms = {
             "active": ["active"],
             "completed": ["completed", "success"],
-            "failed": ["failed", "cancelled"],
+            "failed": ["failed"],
+            "cancelled": ["cancelled"],
         }
         if normalized in synonyms:
             query = query.filter(func.lower(models.TargetWeight.status).in_(synonyms[normalized]))

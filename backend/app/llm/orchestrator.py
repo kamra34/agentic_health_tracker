@@ -235,7 +235,7 @@ class ChatOrchestrator:
                     args = {}
                 # classify tool -> agent name
                 agent_name = "sql"
-                if name.startswith("user_") and ("weight_change" in name or "avg_weight_change" in name):
+                if name.startswith("user_") and ("weight_change" in name or "avg_weight_change" in name or "streak" in name):
                     agent_name = "analytics"
                 elif name.startswith("user_") and ("create_" in name or "update_" in name or "delete_" in name):
                     agent_name = "action"

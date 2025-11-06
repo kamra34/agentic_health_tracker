@@ -283,7 +283,7 @@ function TargetEntry() {
 
       {/* Filter Tabs */}
       <div className="flex gap-2 border-b border-gray-200">
-        {['all', 'active', 'completed', 'failed'].map((filter) => (
+        {['all', 'active', 'completed', 'failed', 'cancelled'].map((filter) => (
           <button
             key={filter}
             onClick={() => setStatusFilter(filter)}

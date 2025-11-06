@@ -1,7 +1,7 @@
 import { useMemo, useState, useRef, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { userAPI, insightsAPI, targetAPI } from '../services/api';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area, BarChart, Bar, ReferenceArea, ReferenceLine, PieChart, Pie, Cell, Legend } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area, BarChart, Bar, ReferenceArea, ReferenceLine, PieChart, Pie, Cell, Legend, Brush } from 'recharts';
 import { format, differenceInCalendarDays, addDays } from 'date-fns';
 
 function Insights() {
@@ -47,9 +47,10 @@ function Insights() {
   });
 
   // Insights data from backend
+  const [seasonWindow, setSeasonWindow] = useState(90);
   const { data: seasonality } = useQuery({
-    queryKey: ['insights','seasonality'],
-    queryFn: async () => (await insightsAPI.getSeasonality()).data,
+    queryKey: ['insights','seasonality', seasonWindow],
+    queryFn: async () => (await insightsAPI.getSeasonality({ window_days: (seasonWindow>0?seasonWindow:undefined) })).data,
   });
   const { data: distributions } = useQuery({
     queryKey: ['insights','distributions'],
@@ -134,12 +135,16 @@ function Insights() {
   const weekdayData = useMemo(() => {
     const labels = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
     const arr = seasonality?.weekday_avg || [];
-    return labels.map((name, i) => ({ name, value: arr[i] ?? 0 }));
+    const n = seasonality?.weekday_n || [];
+    const loss = seasonality?.weekday_loss_pct || [];
+    return labels.map((name, i) => ({ name, value: arr[i] ?? 0, n: n[i] ?? 0, loss: loss[i] ?? 0 }));
   }, [seasonality]);
   const monthData = useMemo(() => {
     const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
     const arr = seasonality?.month_avg || [];
-    return months.map((name, i) => ({ name, value: arr[i] ?? 0 }));
+    const n = seasonality?.month_n || [];
+    const loss = seasonality?.month_loss_pct || [];
+    return months.map((name, i) => ({ name, value: arr[i] ?? 0, n: n[i] ?? 0, loss: loss[i] ?? 0 }));
   }, [seasonality]);
   const histData = useMemo(() => {
     const bins = distributions?.daily_change_hist || [];
@@ -272,8 +277,21 @@ function Insights() {
           {/* Rolling Means (7d & 30d) - Placeholder */}
           {/* Seasonality Hints */}
           <div className="card">
-            <h2 className="text-lg font-semibold text-gray-800 mb-2">Seasonality Hints</h2>
-            <p className="text-sm text-gray-600 mb-3">Average daily change by weekday and month</p>
+            <div className="flex items-start justify-between mb-2">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-800">Seasonality Hints</h2>
+                <p className="text-sm text-gray-600">Average daily change by weekday and month</p>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-sm text-gray-600">Window</span>
+                <select value={seasonWindow} onChange={(e)=>setSeasonWindow(parseInt(e.target.value))} className="border rounded-md px-2 py-1 text-sm">
+                  <option value={30}>1m</option>
+                  <option value={90}>3m</option>
+                  <option value={180}>6m</option>
+                  <option value={0}>All</option>
+                </select>
+              </div>
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div style={{ width: '100%', height: 220 }}>
                 <ResponsiveContainer>
@@ -281,8 +299,12 @@ function Insights() {
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="name" />
                     <YAxis />
-                    <Tooltip formatter={(v) => `${v.toFixed ? v.toFixed(3) : v} kg/day`} />
-                    <Bar dataKey="value" fill="#60a5fa" />
+                    <Tooltip formatter={(v, n, p) => {
+                      const d = p && p.payload ? p.payload : {};
+                      if (n === 'Loss %') return `${v}%`;
+                      return `${(v?.toFixed ? v.toFixed(3) : v)} kg/day (N=${d.n ?? 0}, Loss ${d.loss ?? 0}%)`;
+                    }} />
+                    <Bar dataKey="value" name="Avg" fill="#60a5fa" opacity={0.9} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -292,8 +314,12 @@ function Insights() {
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="name" />
                     <YAxis />
-                    <Tooltip formatter={(v) => `${v.toFixed ? v.toFixed(3) : v} kg/day`} />
-                    <Bar dataKey="value" fill="#34d399" />
+                    <Tooltip formatter={(v, n, p) => {
+                      const d = p && p.payload ? p.payload : {};
+                      if (n === 'Loss %') return `${v}%`;
+                      return `${(v?.toFixed ? v.toFixed(3) : v)} kg/day (N=${d.n ?? 0}, Loss ${d.loss ?? 0}%)`;
+                    }} />
+                    <Bar dataKey="value" name="Avg" fill="#34d399" opacity={0.9} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -502,28 +528,196 @@ function computeRecentSlope(history, user, metric = 'weight') {
 
 // ----- Sections -----
 function CompositionSection({ composition }) {
-  const series = (composition?.points || []).map(p => ({
-    dateLabel: format(new Date(p.date), 'yyyy-MM-dd'),
-    fat: p.fat_mass_est,
-    lean: p.lean_mass_est,
-  })).filter(p => p.fat != null && p.lean != null);
+  const raw = (composition?.points || [])
+    .map(p => ({
+      d: new Date(p.date),
+      dateLabel: format(new Date(p.date), 'yyyy-MM-dd'),
+      fat: p.fat_mass_est != null ? parseFloat(p.fat_mass_est) : null,
+      lean: p.lean_mass_est != null ? parseFloat(p.lean_mass_est) : null,
+    }))
+    .filter(p => p.fat != null && p.lean != null)
+    .sort((a,b)=>a.d-b.d);
+
+  const [compWindow, setCompWindow] = useState(180);
+  const [smooth, setSmooth] = useState('off'); // 'off'|'ma7'|'ma30'
+  const [modePct, setModePct] = useState(false); // false=kg true=%
+
+  const filtered = useMemo(() => {
+    if (!raw.length) return [];
+    if (!compWindow || compWindow <= 0) return raw;
+    const cutoff = addDays(new Date(), -compWindow);
+    return raw.filter(p => p.d >= cutoff);
+  }, [raw, compWindow]);
+
+  const smoothed = useMemo(() => {
+    if (!filtered.length) return [];
+    if (smooth === 'off') return filtered.map(p=>({ ...p }));
+    const k = smooth === 'ma7' ? 7 : 30;
+    const fats = filtered.map(p=>p.fat);
+    const leans = filtered.map(p=>p.lean);
+    const sFat = movingAverage(fats, k);
+    const sLean = movingAverage(leans, k);
+    return filtered.map((p,i)=>({ ...p, fat: sFat[i] ?? p.fat, lean: sLean[i] ?? p.lean }));
+  }, [filtered, smooth]);
+
+  const series = useMemo(() => {
+    return smoothed.map(p => {
+      const total = p.fat + p.lean;
+      return modePct
+        ? { ...p, fatPct: total ? +(p.fat/total*100).toFixed(2) : 0, leanPct: total ? +(p.lean/total*100).toFixed(2) : 0 }
+        : { ...p, total };
+    });
+  }, [smoothed, modePct]);
+
+  // Summary metrics
+  const summary = useMemo(() => {
+    if (!series.length) return null;
+    const first = series[0];
+    const last = series[series.length-1];
+    const deltaFat = +(last.fat - first.fat).toFixed(2);
+    const deltaLean = +(last.lean - first.lean).toFixed(2);
+    // 4-week rates
+    const fourWeeksAgo = addDays(new Date(last.d), -28);
+    const prev = [...series].reverse().find(p => p.d <= fourWeeksAgo) || first;
+    const weeks = Math.max(1, (last.d - prev.d)/(1000*3600*24)/7);
+    const rateFat = +((last.fat - prev.fat)/weeks).toFixed(2);
+    const rateLean = +((last.lean - prev.lean)/weeks).toFixed(2);
+    // Recomposition count: fat down & lean up vs previous point
+    let recomp = 0;
+    for (let i=1;i<series.length;i++) {
+      if (series[i].fat < series[i-1].fat && series[i].lean > series[i-1].lean) recomp++;
+    }
+    const lastVals = { fat: last.fat, lean: last.lean, total: last.fat + last.lean };
+    return { deltaFat, deltaLean, rateFat, rateLean, recomp, lastVals };
+  }, [series]);
+
+  const donutData = useMemo(() => {
+    if (!summary) return [];
+    return [
+      { name: 'Fat', value: summary.lastVals.fat },
+      { name: 'Lean', value: summary.lastVals.lean },
+    ];
+  }, [summary]);
+
+  const COLORS = ['#fb7185', '#34d399'];
 
   return (
     <div className="card">
-      <h2 className="text-lg font-semibold text-gray-800 mb-2">Body Composition Trends</h2>
-      <p className="text-sm text-gray-600 mb-3">Estimated fat vs lean mass</p>
-      <div style={{ width: '100%', height: 260 }}>
+      <div className="flex items-start justify-between mb-2">
+        <div>
+          <h2 className="text-lg font-semibold text-gray-800">Body Composition Trends</h2>
+          <p className="text-sm text-gray-600">Estimated fat vs lean mass {compWindow>0?`(last ${compWindow}d)`:'(all)'}{smooth!=='off'?` • ${smooth.toUpperCase()}`:''}{modePct?' • % mode':''}</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="text-sm text-gray-600">Window</span>
+          <select value={compWindow} onChange={(e)=>setCompWindow(parseInt(e.target.value))} className="border rounded-md px-2 py-1 text-sm">
+            <option value={30}>1m</option>
+            <option value={90}>3m</option>
+            <option value={180}>6m</option>
+            <option value={0}>All</option>
+          </select>
+          <span className="text-sm text-gray-600">Smooth</span>
+          <select value={smooth} onChange={(e)=>setSmooth(e.target.value)} className="border rounded-md px-2 py-1 text-sm">
+            <option value="off">Off</option>
+            <option value="ma7">7d</option>
+            <option value="ma30">30d</option>
+          </select>
+          <label className="flex items-center gap-2 text-sm text-gray-700">
+            <input type="checkbox" checked={modePct} onChange={(e)=>setModePct(e.target.checked)} /> %
+          </label>
+        </div>
+      </div>
+
+      {summary && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-3">
+          <div className="stat-card">
+            <div className="text-sm text-gray-700">Delta since start</div>
+            <div className="mt-1 text-gray-900">
+              <div className="text-sm">Fat: <span className={summary.deltaFat<=0?'text-emerald-600':'text-rose-600'}>{summary.deltaFat} kg</span></div>
+              <div className="text-sm">Lean: <span className={summary.deltaLean>=0?'text-emerald-600':'text-rose-600'}>{summary.deltaLean} kg</span></div>
+            </div>
+          </div>
+          <div className="stat-card">
+            <div className="text-sm text-gray-700">Rates (last ~4w)</div>
+            <div className="mt-1 text-gray-900">
+              <div className="text-sm">Fat: {summary.rateFat} kg/wk</div>
+              <div className="text-sm">Lean: {summary.rateLean} kg/wk</div>
+            </div>
+          </div>
+          <div className="stat-card">
+            <div className="text-sm text-gray-700">Current Composition</div>
+            <div className="flex items-center gap-3">
+              <div className="w-28 h-28">
+                <ResponsiveContainer>
+                  <PieChart>
+                    <Pie data={donutData} dataKey="value" innerRadius={28} outerRadius={40} paddingAngle={2}>
+                      {donutData.map((entry, i) => (
+                        <Cell key={i} fill={COLORS[i % COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip formatter={(v,n)=>`${n}: ${v.toFixed(2)} kg (${(v/summary.lastVals.total*100).toFixed(1)}%)`} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="text-sm text-gray-800">
+                <div>Fat: {summary.lastVals.fat.toFixed(2)} kg</div>
+                <div>Lean: {summary.lastVals.lean.toFixed(2)} kg</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div style={{ width: '100%', height: 300 }}>
         <ResponsiveContainer>
           <AreaChart data={series}>
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis dataKey="dateLabel" />
-            <YAxis />
-            <Tooltip />
-            <Area type="monotone" dataKey="fat" stackId="1" stroke="#fb7185" fill="#fecaca" />
-            <Area type="monotone" dataKey="lean" stackId="1" stroke="#34d399" fill="#bbf7d0" />
+            {modePct ? (
+              <YAxis domain={[0,100]} tickFormatter={(v)=>`${v}%`} />
+            ) : (
+              <YAxis />
+            )}
+            <Tooltip content={({ label, payload }) => {
+              if (!payload || payload.length===0) return null;
+              const d = payload[0].payload;
+              const total = d.fat + d.lean;
+              return (
+                <div className="bg-white rounded shadow p-2 text-sm">
+                  <div className="font-medium mb-1">{label}</div>
+                  {!modePct ? (
+                    <>
+                      <div>Fat: {d.fat.toFixed(2)} kg</div>
+                      <div>Lean: {d.lean.toFixed(2)} kg</div>
+                      <div className="text-gray-600">Total: {total.toFixed(2)} kg</div>
+                    </>
+                  ) : (
+                    <>
+                      <div>Fat: {d.fatPct?.toFixed(1)}%</div>
+                      <div>Lean: {d.leanPct?.toFixed(1)}%</div>
+                    </>
+                  )}
+                </div>
+              );
+            }} />
+            {!modePct ? (
+              <>
+                <Area type="monotone" dataKey="fat" stackId="1" stroke="#fb7185" fill="#fecaca" />
+                <Area type="monotone" dataKey="lean" stackId="1" stroke="#34d399" fill="#bbf7d0" />
+              </>
+            ) : (
+              <>
+                <Area type="monotone" dataKey="fatPct" stackId="1" stroke="#fb7185" fill="#fecaca" />
+                <Area type="monotone" dataKey="leanPct" stackId="1" stroke="#34d399" fill="#bbf7d0" />
+              </>
+            )}
+            <Brush dataKey="dateLabel" height={20} stroke="#9ca3af" travellerWidth={8} />
           </AreaChart>
         </ResponsiveContainer>
       </div>
+      {summary && (
+        <div className="mt-2 text-xs text-gray-600">Recomposition signals (fat↓ & lean↑): {summary.recomp}</div>
+      )}
     </div>
   );
 }

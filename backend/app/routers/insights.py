@@ -765,14 +765,21 @@ def get_distributions(
 class SeasonalityResponse(BaseModel):
     weekday_avg: List[float]  # len 7, Sun..Sat
     month_avg: List[float]    # len 12, Jan..Dec
+    # Additional context
+    weekday_n: List[int] = []
+    month_n: List[int] = []
+    weekday_loss_pct: List[float] = []  # 0..100
+    month_loss_pct: List[float] = []    # 0..100
 
 
 @router.get("/seasonality", response_model=SeasonalityResponse)
 def get_seasonality(
+    window_days: Optional[int] = Query(None, ge=7, le=2000),
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    cached = _cache_get("seasonality", current_user.id)
+    cache_key = f"wd:{window_days or 0}"
+    cached = _param_cache_get("seasonality", current_user.id, cache_key)
     if cached:
         return cached
     weights = (
@@ -782,12 +789,17 @@ def get_seasonality(
         .all()
     )
     series = _to_series(weights)
+    # Optional cutoff
+    cutoff = None
+    if window_days:
+        cutoff = date.today() - timedelta(days=window_days - 1)
     deltas: List[Tuple[date, float]] = []
     for (d1, v1), (d2, v2) in zip(series[:-1], series[1:]):
         gap = (d2 - d1).days
         if gap > 0:
-            deltas.append((d2, (v2 - v1) / gap))
-    accW = [(0.0, 0) for _ in range(7)]  # sum, n
+            if cutoff is None or d2 >= cutoff:
+                deltas.append((d2, (v2 - v1) / gap))
+    accW = [(0.0, 0, 0) for _ in range(7)]  # sum, n, losses
     accW = [list(x) for x in accW]
     for d, ch in deltas:
         wd = d.weekday()  # 0 Mon..6 Sun
@@ -795,16 +807,31 @@ def get_seasonality(
         sun_first = (wd + 1) % 7
         accW[sun_first][0] += ch
         accW[sun_first][1] += 1
-    weekday_avg = [round((s / n), 4) if n else 0.0 for s, n in accW]
-    accM = [(0.0, 0) for _ in range(12)]
+        if ch < 0:
+            accW[sun_first][2] += 1
+    weekday_avg = [round((s / n), 4) if n else 0.0 for s, n, _ in accW]
+    weekday_n = [n for _, n, _ in accW]
+    weekday_loss_pct = [round((loss / n) * 100.0, 1) if n else 0.0 for _, n, loss in accW]
+    accM = [(0.0, 0, 0) for _ in range(12)]
     accM = [list(x) for x in accM]
     for d, ch in deltas:
         m = d.month - 1
         accM[m][0] += ch
         accM[m][1] += 1
-    month_avg = [round((s / n), 4) if n else 0.0 for s, n in accM]
-    resp = SeasonalityResponse(weekday_avg=weekday_avg, month_avg=month_avg)
-    _cache_set("seasonality", current_user.id, resp)
+        if ch < 0:
+            accM[m][2] += 1
+    month_avg = [round((s / n), 4) if n else 0.0 for s, n, _ in accM]
+    month_n = [n for _, n, _ in accM]
+    month_loss_pct = [round((loss / n) * 100.0, 1) if n else 0.0 for _, n, loss in accM]
+    resp = SeasonalityResponse(
+        weekday_avg=weekday_avg,
+        month_avg=month_avg,
+        weekday_n=weekday_n,
+        month_n=month_n,
+        weekday_loss_pct=weekday_loss_pct,
+        month_loss_pct=month_loss_pct,
+    )
+    _param_cache_set("seasonality", current_user.id, cache_key, resp)
     return resp
 
 

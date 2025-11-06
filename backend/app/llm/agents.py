@@ -206,9 +206,75 @@ class AnalyticsAgent(BaseAgent):
                     },
                 },
             },
+            {
+                "type": "function",
+                "function": {
+                    "name": "user_avg_weight_change",
+                    "description": "Compute average weight change per day/week/month over a date range for the current user.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "date_from": {"type": "string"},
+                            "date_to": {"type": ["string", "null"]},
+                        },
+                        "required": ["date_from"],
+                    },
+                },
+            },
         ]
 
     def execute(self, tool_name: str, args: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        if tool_name == "user_avg_weight_change":
+            d_from = parse_date_str(args.get("date_from")) if args.get("date_from") else None
+            d_to = parse_date_str(args.get("date_to")) if args.get("date_to") else None
+            if not d_from:
+                return {"error": "Invalid date_from"}
+            # end = latest record if date_to not provided
+            q = self.db.query(models.Weight).filter(models.Weight.user_id == self.user.id)
+            if d_to:
+                q = q.filter(models.Weight.date_of_measurement <= d_to)
+            latest = q.order_by(models.Weight.date_of_measurement.desc()).first()
+            if not latest:
+                return {"error": "No weights found in range"}
+            end_date = latest.date_of_measurement
+            end_w = safe_float(latest.weight)
+            # find first at or after d_from; if none, first after
+            start_q = self.db.query(models.Weight).filter(
+                models.Weight.user_id == self.user.id,
+                models.Weight.date_of_measurement >= d_from
+            ).order_by(models.Weight.date_of_measurement.asc())
+            start_row = start_q.first()
+            if not start_row:
+                # choose the earliest available after the date_from window (already handled by query)
+                return {"error": "No starting weight found on/after date_from"}
+            start_date = start_row.date_of_measurement
+            start_w = safe_float(start_row.weight)
+            days = (end_date - start_date).days or 0
+            if days <= 0 or start_w is None or end_w is None:
+                return {
+                    "start_date": start_date.isoformat() if start_date else None,
+                    "end_date": end_date.isoformat() if end_date else None,
+                    "delta_kg": None,
+                    "days": days,
+                    "per_day": None,
+                    "per_week": None,
+                    "per_month": None,
+                }
+            delta = round(end_w - start_w, 3)
+            per_day = round(delta / days, 4)
+            per_week = round(per_day * 7, 4)
+            per_month = round(per_day * 30.4375, 4)
+            return {
+                "start_date": start_date.isoformat(),
+                "start_weight_kg": start_w,
+                "end_date": end_date.isoformat(),
+                "end_weight_kg": end_w,
+                "delta_kg": delta,
+                "days": days,
+                "per_day": per_day,
+                "per_week": per_week,
+                "per_month": per_month,
+            }
         if tool_name != "user_weight_change_periods":
             return None
         periods = args.get("periods_days") or []
@@ -653,7 +719,7 @@ class AdminAgent(BaseAgent):
                 "type": "function",
                 "function": {
                     "name": "admin_create_user",
-                    "description": "Create a new user (admin)",
+                    "description": "Create a new user (admin). Requires name and password; email is optional.",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -673,8 +739,20 @@ class AdminAgent(BaseAgent):
             {
                 "type": "function",
                 "function": {
+                    "name": "admin_get_user_by_name",
+                    "description": "Lookup a user by exact name. Returns id and safe fields (admin)",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"name": {"type": "string"}},
+                        "required": ["name"],
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
                     "name": "admin_update_user",
-                    "description": "Update user profile (admin)",
+                    "description": "Update user profile (admin). Supports name, email, sex, height, activity_level, date_of_birth, and is_admin.",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -685,6 +763,7 @@ class AdminAgent(BaseAgent):
                             "height": {"type": ["number", "null"]},
                             "activity_level": {"type": ["string", "null"]},
                             "date_of_birth": {"type": ["string", "null"]},
+                            "is_admin": {"type": ["boolean", "null"]},
                         },
                         "required": ["user_id"],
                     },
@@ -709,11 +788,23 @@ class AdminAgent(BaseAgent):
                 "type": "function",
                 "function": {
                     "name": "admin_delete_user",
-                    "description": "Delete a user (admin)",
+                    "description": "Delete a user by id (admin)",
                     "parameters": {
                         "type": "object",
                         "properties": {"user_id": {"type": "integer"}},
                         "required": ["user_id"],
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "admin_delete_user_by_name",
+                    "description": "Delete user by exact name (admin)",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"name": {"type": "string"}},
+                        "required": ["name"],
                     },
                 },
             },
@@ -727,6 +818,14 @@ class AdminAgent(BaseAgent):
                         "properties": {"target_id": {"type": "integer"}},
                         "required": ["target_id"],
                     },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "admin_promote_all_non_admins",
+                    "description": "Promote all non-admin users to admin (admin)",
+                    "parameters": {"type": "object", "properties": {}, "required": []},
                 },
             },
         ]
@@ -781,6 +880,20 @@ class AdminAgent(BaseAgent):
                 return {"table": table, "columns": schema}
             except Exception:
                 return {"error": f"Unknown table: {table}"}
+        if tool_name == "admin_get_user_by_name":
+            name = (args.get("name") or "").strip()
+            if not name:
+                return {"error": "Missing name"}
+            u = self.db.query(models.User).filter(models.User.name == name).first()
+            if not u:
+                return {"error": "User not found"}
+            return {
+                "id": u.id,
+                "name": u.name,
+                "email": u.email,
+                "is_admin": bool(u.is_admin),
+                "created_at": u.created_at.isoformat() if u.created_at else None,
+            }
         if tool_name == "admin_create_user":
             from ..auth import get_password_hash  # type: ignore
             name = args.get("name")
@@ -830,9 +943,11 @@ class AdminAgent(BaseAgent):
             for fld in ["sex", "height", "activity_level", "date_of_birth"]:
                 if fld in args and args[fld] is not None:
                     setattr(u, fld, args[fld])
+            if "is_admin" in args and args["is_admin"] is not None:
+                u.is_admin = bool(args["is_admin"])  # promote/demote admin
             self.db.commit()
             self.db.refresh(u)
-            return {"id": u.id, "name": u.name}
+            return {"id": u.id, "name": u.name, "is_admin": bool(u.is_admin)}
         if tool_name == "admin_set_user_password":
             uid = int(args.get("user_id"))
             new_pw = args.get("new_password") or ""
@@ -853,6 +968,16 @@ class AdminAgent(BaseAgent):
             self.db.delete(u)
             self.db.commit()
             return {"message": "User deleted"}
+        if tool_name == "admin_delete_user_by_name":
+            name = (args.get("name") or "").strip()
+            if not name:
+                return {"error": "Missing name"}
+            u = self.db.query(models.User).filter(models.User.name == name).first()
+            if not u:
+                return {"error": "User not found"}
+            self.db.delete(u)
+            self.db.commit()
+            return {"message": "User deleted"}
         if tool_name == "admin_delete_target":
             tid = int(args.get("target_id"))
             t = self.db.query(models.TargetWeight).filter(models.TargetWeight.id == tid).first()
@@ -861,4 +986,12 @@ class AdminAgent(BaseAgent):
             self.db.delete(t)
             self.db.commit()
             return {"message": "Target deleted"}
+        if tool_name == "admin_promote_all_non_admins":
+            rows = self.db.query(models.User).filter(models.User.is_admin != True).all()
+            count = 0
+            for u in rows:
+                u.is_admin = True
+                count += 1
+            self.db.commit()
+            return {"updated": count}
         return None

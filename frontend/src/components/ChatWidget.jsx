@@ -12,6 +12,8 @@ function ChatWidget() {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const endRef = useRef(null);
+  const messagesRef = useRef(null);
+  const textareaRef = useRef(null);
   const queryClient = useQueryClient();
   const [events, setEvents] = useState([]); // live agent events for current task
   const pollRef = useRef(null);
@@ -39,8 +41,14 @@ function ChatWidget() {
   }, [open]);
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, open]);
+    try {
+      if (messagesRef.current) {
+        messagesRef.current.scrollTo({ top: messagesRef.current.scrollHeight, behavior: 'smooth' });
+      } else {
+        endRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }
+    } catch (_) {}
+  }, [messages, open, events]);
 
   // Persist state to localStorage whenever it changes
   useEffect(() => {
@@ -51,6 +59,21 @@ function ChatWidget() {
       // ignore
     }
   }, [open, messages, storageKey]);
+
+  const onInputResize = (e) => {
+    const el = e?.target || textareaRef.current;
+    if (!el) return;
+    // Reset to base height then grow to content up to max
+    el.style.height = '24px';
+    const newHeight = Math.min(el.scrollHeight, 160); // matches max-h-40
+    el.style.height = `${newHeight}px`;
+  };
+
+  useEffect(() => {
+    // Keep height in sync when input or panel state changes
+    onInputResize();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [input, open]);
 
   const send = async () => {
     const text = input.trim();
@@ -168,32 +191,32 @@ function ChatWidget() {
 
       {/* Panel */}
       {open && (
-        <div className="fixed bottom-24 right-6 z-40 w-[360px] max-w-[90vw] bg-white border border-gray-200 rounded-xl shadow-xl flex flex-col overflow-hidden">
-          <div className="flex items-center gap-2 px-4 py-3 border-b bg-gray-50">
-            <Bot size={18} className="text-primary-600" />
-            <div className="font-medium text-gray-800">Chat</div>
+        <div className="fixed bottom-24 right-6 z-40 w-[420px] max-w-[92vw] bg-white/90 backdrop-blur border border-gray-200 rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+          <div className="flex items-center gap-2 px-4 py-3 bg-gradient-to-r from-primary-600 to-indigo-600 text-white">
+            <Bot size={18} className="opacity-90" />
+            <div className="font-semibold">Agent Chat</div>
           </div>
-          <div className="p-3 space-y-3 overflow-auto" style={{ maxHeight: '50vh' }}>
+          <div ref={messagesRef} className="p-3 space-y-3 overflow-auto" style={{ maxHeight: '55vh' }}>
             {messages.map((m, i) => (
               <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div className={`${m.role === 'user' ? 'bg-primary-600 text-white' : 'bg-gray-100 text-gray-800'} px-3 py-2 rounded-lg max-w-[80%] whitespace-pre-wrap ${m._pending ? 'animate-pulse' : ''}`}>{m.content}</div>
+                <div className={`${m.role === 'user' ? 'bg-primary-600 text-white' : 'bg-gray-50 text-gray-900 border border-gray-200'} shadow-sm px-3 py-2 rounded-2xl max-w-[80%] whitespace-pre-wrap ${m._pending ? 'animate-pulse' : ''}`}>{m.content}</div>
               </div>
             ))}
 
             {/* In-chat live agent status bubble */}
             {(events.length > 0 && (sseRef.current || pollRef.current)) && (
               <div className="flex justify-start">
-                <div className="max-w-[80%] bg-indigo-50 text-indigo-900 border border-indigo-200 px-3 py-2 rounded-lg animate-pulse">
-                  <div className="text-xs font-semibold mb-1 flex items-center gap-1">
+                <div className="max-w-[85%] bg-indigo-50 text-indigo-900 border border-indigo-200 px-3 py-2 rounded-2xl shadow-sm animate-pulse">
+                  <div className="text-xs font-semibold mb-2 flex items-center gap-1">
                     <Brain className="w-4 h-4 text-indigo-600" /> Live progress
                   </div>
-                  <div className="flex flex-wrap gap-2">
+                  <div className="flex flex-col gap-2">
                     {events.slice(-6).map((ev, idx) => (
-                      <span key={idx} className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-white text-indigo-800 border border-indigo-200">
+                      <span key={idx} className="inline-flex items-center gap-2 px-2 py-1 rounded-full bg-white text-indigo-800 border border-indigo-200">
                         {chipIcon(ev.agent)}
-                        <span className="font-medium capitalize">{(ev.agent || 'agent')}</span>
-                        <span className="text-indigo-300">·</span>
-                        <span>{ev.label}</span>
+                        <span className="font-semibold capitalize">{(ev.agent || 'agent')}</span>
+                        <span className="text-indigo-300">•</span>
+                        <span className="text-indigo-700">{ev.label}</span>
                       </span>
                     ))}
                   </div>
@@ -204,21 +227,27 @@ function ChatWidget() {
             <div ref={endRef} />
           </div>
           <div className="p-3 border-t bg-white">
-            <div className="flex items-center gap-2">
-              <textarea
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={onKeyDown}
-                rows={1}
-                placeholder="Ask about your data..."
-                className="flex-1 resize-none rounded-md border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
-              />
+            <div className="flex items-end gap-2">
+              <div className="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 focus-within:ring-2 focus-within:ring-primary-500">
+                <textarea
+                  ref={textareaRef}
+                  value={input}
+                  onChange={(e) => { setInput(e.target.value); onInputResize(e); }}
+                  onInput={onInputResize}
+                  onKeyDown={onKeyDown}
+                  rows={1}
+                  placeholder="Ask about your data... (Shift+Enter for newline)"
+                  className="w-full bg-transparent resize-none outline-none leading-6 max-h-40 text-gray-900 placeholder:text-gray-400"
+                  style={{ height: '24px' }}
+                />
+              </div>
               <button
                 onClick={send}
                 disabled={loading}
-                className="inline-flex items-center gap-2 rounded-md px-3 py-2 bg-primary-600 text-white hover:bg-primary-700 disabled:opacity-50"
+                className="inline-flex items-center gap-2 rounded-xl px-4 py-2 bg-primary-600 text-white hover:bg-primary-700 disabled:opacity-50 shadow"
+                title="Send"
               >
-                <Send size={16} /> {loading ? 'Sending' : 'Send'}
+                <Send size={16} />
               </button>
             </div>
             {/* Moved live chips inside chat box above */}

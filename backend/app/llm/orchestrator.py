@@ -5,7 +5,7 @@ from .. import models
 from ..config import settings
 from sqlalchemy.orm import Session
 
-from .agents import SQLAgent, AnalyticsAgent, BaseAgent
+from .agents import SQLAgent, AnalyticsAgent, ActionAgent, AdminAgent, BaseAgent
 from .tools import summarize_schema, gather_user_context
 
 try:
@@ -59,10 +59,9 @@ class ChatOrchestrator:
                  on_event: Optional[Callable[[str, str, Optional[Dict[str, Any]]], None]] = None,
                  ) -> str:
         # Build agents
-        agents: List[BaseAgent] = [
-            SQLAgent(db, user),
-            AnalyticsAgent(db, user),
-        ]
+        agents: List[BaseAgent] = [SQLAgent(db, user), AnalyticsAgent(db, user), ActionAgent(db, user)]
+        if user.is_admin:
+            agents.append(AdminAgent(db, user))
         tools = self._aggregate_tools(agents)
         sys_prompt = self.build_system_prompt()
         ctx = self.build_context(db, user)
@@ -75,6 +74,8 @@ class ChatOrchestrator:
             chat_msgs.append({"role": m["role"], "content": m["content"]})
 
         # First completion with tools
+        if on_event:
+            on_event("planner", "planning", None)
         completion = self.client.chat.completions.create(
             model=self.model,
             messages=chat_msgs,
@@ -97,8 +98,16 @@ class ChatOrchestrator:
                     args = _json.loads(tc.function.arguments or "{}")
                 except Exception:
                     args = {}
+                # classify tool -> agent name
+                agent_name = "sql"
+                if name.startswith("user_") and ("weight_change" in name):
+                    agent_name = "analytics"
+                elif name.startswith("user_") and ("create_" in name or "update_" in name or "delete_" in name):
+                    agent_name = "action"
+                elif name.startswith("admin_"):
+                    agent_name = "admin"
                 if on_event:
-                    on_event("sql", f"{name}", None)
+                    on_event(agent_name, name, None)
                 result = self._exec_tool(agents, name, args)
                 chat_msgs.append({"role": "tool", "tool_call_id": tc.id, "name": name, "content": str(result)})
             completion = self.client.chat.completions.create(
@@ -108,5 +117,6 @@ class ChatOrchestrator:
             )
             msg = completion.choices[0].message
 
+        if on_event:
+            on_event("responder", "finalizing", None)
         return msg.content or ""
-

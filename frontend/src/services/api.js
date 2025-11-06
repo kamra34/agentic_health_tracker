@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+export const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 // Create axios instance
 const api = axios.create({
@@ -107,9 +107,11 @@ export const insightsAPI = {
   getCalendar: (days = 365) => api.get('/api/insights/calendar', { params: { days } }),
 };
 
-// Chat API
+// Chat API (v2 + async tasks)
 export const chatAPI = {
-  send: (messages) => api.post('/api/chat', { messages }),
+  send: (messages) => api.post('/api/chat/v2', { messages }),
+  startTask: (messages) => api.post('/api/chat/v2/task', { messages }),
+  getTask: (taskId) => api.get(`/api/chat/v2/tasks/${taskId}`),
 };
 
 export default api;

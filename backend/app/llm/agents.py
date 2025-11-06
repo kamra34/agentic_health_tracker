@@ -282,3 +282,492 @@ class AnalyticsAgent(BaseAgent):
             })
         return out
 
+class ActionAgent(BaseAgent):
+    name = "action"
+
+    def __init__(self, db: Session, user: models.User):
+        self.db = db
+        self.user = user
+
+    def tools(self) -> List[Dict[str, Any]]:
+        return [
+            {
+                "type": "function",
+                "function": {
+                    "name": "user_create_weight",
+                    "description": "Create weight entry (no future dates).",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "date_of_measurement": {"type": "string"},
+                            "weight": {"type": "number"},
+                            "body_fat_percentage": {"type": ["number", "null"]},
+                            "muscle_mass": {"type": ["number", "null"]},
+                            "notes": {"type": ["string", "null"]},
+                        },
+                        "required": ["date_of_measurement", "weight"],
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "user_update_latest_weight",
+                    "description": "Update most recent weight value.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"weight": {"type": "number"}},
+                        "required": ["weight"],
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "user_update_weight_by_date",
+                    "description": "Update weight for a specific date (no future dates).",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "date_of_measurement": {"type": "string"},
+                            "weight": {"type": "number"},
+                        },
+                        "required": ["date_of_measurement", "weight"],
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "user_update_weight",
+                    "description": "Update a weight entry by id.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "weight_id": {"type": "integer"},
+                            "date_of_measurement": {"type": ["string", "null"]},
+                            "weight": {"type": ["number", "null"]},
+                            "body_fat_percentage": {"type": ["number", "null"]},
+                            "muscle_mass": {"type": ["number", "null"]},
+                            "notes": {"type": ["string", "null"]},
+                        },
+                        "required": ["weight_id"],
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "user_delete_weight",
+                    "description": "Delete a weight entry by id.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"weight_id": {"type": "integer"}},
+                        "required": ["weight_id"],
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "user_create_target",
+                    "description": "Create a target (no past date).",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "date_of_target": {"type": "string"},
+                            "target_weight": {"type": "number"},
+                        },
+                        "required": ["date_of_target", "target_weight"],
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "user_update_active_target",
+                    "description": "Update single active target (no past date).",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "date_of_target": {"type": ["string", "null"]},
+                            "target_weight": {"type": ["number", "null"]},
+                            "status": {"type": ["string", "null"], "enum": ["active", "completed", "cancelled"]},
+                        },
+                        "required": [],
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "user_update_target",
+                    "description": "Update a target by id (no past date for active).",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "target_id": {"type": "integer"},
+                            "date_of_target": {"type": ["string", "null"]},
+                            "target_weight": {"type": ["number", "null"]},
+                            "status": {"type": ["string", "null"], "enum": ["active", "completed", "cancelled"]},
+                        },
+                        "required": ["target_id"],
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "user_delete_target",
+                    "description": "Delete a target by id.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"target_id": {"type": "integer"}},
+                        "required": ["target_id"],
+                    },
+                },
+            },
+        ]
+
+    def execute(self, tool_name: str, args: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        from datetime import date as _date
+        # Weights
+        if tool_name == "user_create_weight":
+            dom = args.get("date_of_measurement")
+            w = args.get("weight")
+            dom_d = parse_date_str(dom)
+            if not dom_d or w is None:
+                return {"error": "Missing/invalid date_of_measurement or weight"}
+            if dom_d > _date.today():
+                return {"error": "Cannot set a weight entry in the future"}
+            existing = self.db.query(models.Weight).filter(models.Weight.user_id == self.user.id, models.Weight.date_of_measurement == dom_d).first()
+            if existing:
+                return {"error": f"Weight entry already exists for {dom}"}
+            obj = models.Weight(
+                user_id=self.user.id,
+                date_of_measurement=dom_d,
+                weight=w,
+                body_fat_percentage=args.get("body_fat_percentage"),
+                muscle_mass=args.get("muscle_mass"),
+                notes=args.get("notes"),
+            )
+            self.db.add(obj)
+            self.db.commit()
+            self.db.refresh(obj)
+            return {"id": obj.id, "date": obj.date_of_measurement.isoformat(), "weight": safe_float(obj.weight)}
+
+        if tool_name == "user_update_latest_weight":
+            from sqlalchemy import desc as _desc
+            new_w = args.get("weight")
+            if new_w is None:
+                return {"error": "Missing weight"}
+            obj = self.db.query(models.Weight).filter(models.Weight.user_id == self.user.id).order_by(_desc(models.Weight.date_of_measurement)).first()
+            if not obj:
+                return {"error": "No weight entries found"}
+            obj.weight = new_w
+            self.db.commit()
+            self.db.refresh(obj)
+            return {"id": obj.id, "date": obj.date_of_measurement.isoformat(), "weight": safe_float(obj.weight)}
+
+        if tool_name == "user_update_weight_by_date":
+            dom = args.get("date_of_measurement")
+            new_w = args.get("weight")
+            dom_d = parse_date_str(dom)
+            if not dom_d or new_w is None:
+                return {"error": "Missing/invalid date_of_measurement or weight"}
+            if dom_d > _date.today():
+                return {"error": "Cannot set a weight entry in the future"}
+            obj = self.db.query(models.Weight).filter(models.Weight.user_id == self.user.id, models.Weight.date_of_measurement == dom_d).first()
+            if not obj:
+                return {"error": f"No weight entry found for {dom}"}
+            obj.weight = new_w
+            self.db.commit()
+            self.db.refresh(obj)
+            return {"id": obj.id, "date": obj.date_of_measurement.isoformat(), "weight": safe_float(obj.weight)}
+
+        if tool_name == "user_update_weight":
+            wid = int(args.get("weight_id"))
+            obj = self.db.query(models.Weight).filter(models.Weight.id == wid, models.Weight.user_id == self.user.id).first()
+            if not obj:
+                return {"error": "Weight entry not found"}
+            if args.get("date_of_measurement") is not None:
+                dom_d = parse_date_str(args.get("date_of_measurement"))
+                if not dom_d:
+                    return {"error": "Invalid date_of_measurement"}
+                if dom_d > _date.today():
+                    return {"error": "Cannot set a weight entry in the future"}
+                dup = self.db.query(models.Weight).filter(models.Weight.user_id == self.user.id, models.Weight.date_of_measurement == dom_d, models.Weight.id != wid).first()
+                if dup:
+                    return {"error": f"Weight entry already exists for {dom_d}"}
+                obj.date_of_measurement = dom_d
+            for fld in ["weight", "body_fat_percentage", "muscle_mass", "notes"]:
+                if fld in args and args[fld] is not None:
+                    setattr(obj, fld, args[fld])
+            self.db.commit()
+            self.db.refresh(obj)
+            return {"id": obj.id, "date": obj.date_of_measurement.isoformat(), "weight": safe_float(obj.weight)}
+
+        if tool_name == "user_delete_weight":
+            wid = int(args.get("weight_id"))
+            obj = self.db.query(models.Weight).filter(models.Weight.id == wid, models.Weight.user_id == self.user.id).first()
+            if not obj:
+                return {"error": "Weight entry not found"}
+            self.db.delete(obj)
+            self.db.commit()
+            return {"message": "Weight entry deleted"}
+
+        if tool_name == "user_create_target":
+            dot = args.get("date_of_target")
+            tw = args.get("target_weight")
+            dot_d = parse_date_str(dot)
+            if not dot_d or tw is None:
+                return {"error": "Missing/invalid date_of_target or target_weight"}
+            if dot_d < _date.today():
+                return {"error": "Cannot create a target in the past"}
+            obj = models.TargetWeight(
+                user_id=self.user.id,
+                date_of_target=dot_d,
+                target_weight=tw,
+                status="active",
+            )
+            self.db.add(obj)
+            self.db.commit()
+            self.db.refresh(obj)
+            return {"id": obj.id, "date_of_target": obj.date_of_target.isoformat(), "target_weight": safe_float(obj.target_weight), "status": obj.status}
+
+        if tool_name == "user_update_active_target":
+            active = self.db.query(models.TargetWeight).filter(models.TargetWeight.user_id == self.user.id, models.TargetWeight.status == "active").order_by(models.TargetWeight.created_date.desc()).all()
+            if not active:
+                return {"error": "No active target to update"}
+            if len(active) > 1:
+                return {"error": "Multiple active targets; specify target_id"}
+            obj = active[0]
+            if args.get("date_of_target") is not None:
+                dot_d = parse_date_str(args.get("date_of_target"))
+                if not dot_d:
+                    return {"error": "Invalid date_of_target"}
+                if dot_d < _date.today():
+                    return {"error": "Cannot set an active target's date to the past"}
+                obj.date_of_target = dot_d
+            if args.get("target_weight") is not None:
+                obj.target_weight = args.get("target_weight")
+            if args.get("status") is not None:
+                status_val = str(args.get("status"))
+                if status_val not in ["active", "completed", "cancelled"]:
+                    return {"error": "Status must be one of: active, completed, cancelled"}
+                obj.status = status_val
+            self.db.commit()
+            self.db.refresh(obj)
+            return {"id": obj.id, "date_of_target": obj.date_of_target.isoformat(), "target_weight": safe_float(obj.target_weight), "status": obj.status}
+
+        if tool_name == "user_update_target":
+            tid = int(args.get("target_id"))
+            obj = self.db.query(models.TargetWeight).filter(models.TargetWeight.id == tid, models.TargetWeight.user_id == self.user.id).first()
+            if not obj:
+                return {"error": "Target not found"}
+            if args.get("date_of_target") is not None:
+                dot_d = parse_date_str(args.get("date_of_target"))
+                if not dot_d:
+                    return {"error": "Invalid date_of_target"}
+                if (obj.status or "active") == "active" and dot_d < _date.today():
+                    return {"error": "Cannot set an active target's date to the past"}
+                obj.date_of_target = dot_d
+            if args.get("target_weight") is not None:
+                obj.target_weight = args.get("target_weight")
+            if args.get("status") is not None:
+                status_val = str(args.get("status"))
+                if status_val not in ["active", "completed", "cancelled"]:
+                    return {"error": "Status must be one of: active, completed, cancelled"}
+                obj.status = status_val
+            self.db.commit()
+            self.db.refresh(obj)
+            return {"id": obj.id, "date_of_target": obj.date_of_target.isoformat(), "target_weight": safe_float(obj.target_weight), "status": obj.status}
+
+        if tool_name == "user_delete_target":
+            tid = int(args.get("target_id"))
+            obj = self.db.query(models.TargetWeight).filter(models.TargetWeight.id == tid, models.TargetWeight.user_id == self.user.id).first()
+            if not obj:
+                return {"error": "Target not found"}
+            self.db.delete(obj)
+            self.db.commit()
+            return {"message": "Target deleted"}
+
+        return None
+
+class AdminAgent(BaseAgent):
+    name = "admin"
+
+    def __init__(self, db: Session, user: models.User):
+        self.db = db
+        self.user = user
+
+    def tools(self) -> List[Dict[str, Any]]:
+        if not self.user.is_admin:
+            return []
+        return [
+            {
+                "type": "function",
+                "function": {
+                    "name": "admin_create_user",
+                    "description": "Create a new user (admin)",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "name": {"type": "string"},
+                            "password": {"type": "string"},
+                            "email": {"type": ["string", "null"]},
+                            "sex": {"type": ["string", "null"]},
+                            "height": {"type": ["number", "null"]},
+                            "activity_level": {"type": ["string", "null"]},
+                            "date_of_birth": {"type": ["string", "null"]},
+                            "is_admin": {"type": ["boolean", "null"]},
+                        },
+                        "required": ["name", "password"],
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "admin_update_user",
+                    "description": "Update user profile (admin)",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "user_id": {"type": "integer"},
+                            "name": {"type": ["string", "null"]},
+                            "email": {"type": ["string", "null"]},
+                            "sex": {"type": ["string", "null"]},
+                            "height": {"type": ["number", "null"]},
+                            "activity_level": {"type": ["string", "null"]},
+                            "date_of_birth": {"type": ["string", "null"]},
+                        },
+                        "required": ["user_id"],
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "admin_set_user_password",
+                    "description": "Set user password (admin)",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "user_id": {"type": "integer"},
+                            "new_password": {"type": "string"},
+                        },
+                        "required": ["user_id", "new_password"],
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "admin_delete_user",
+                    "description": "Delete a user (admin)",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"user_id": {"type": "integer"}},
+                        "required": ["user_id"],
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "admin_delete_target",
+                    "description": "Delete target by id (admin)",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"target_id": {"type": "integer"}},
+                        "required": ["target_id"],
+                    },
+                },
+            },
+        ]
+
+    def execute(self, tool_name: str, args: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        if not self.user.is_admin:
+            return None
+        if tool_name == "admin_create_user":
+            from ..auth import get_password_hash  # type: ignore
+            name = args.get("name")
+            password = args.get("password")
+            if not name or not password:
+                return {"error": "Missing name or password"}
+            existing = self.db.query(models.User).filter(models.User.name == name).first()
+            if existing:
+                return {"error": "Username already registered"}
+            email = args.get("email")
+            if email:
+                existing_email = self.db.query(models.User).filter(models.User.email == email).first()
+                if existing_email:
+                    return {"error": "Email already registered"}
+            u = models.User(
+                name=name,
+                email=email,
+                password_hash=get_password_hash(password),
+                sex=args.get("sex"),
+                height=args.get("height"),
+                activity_level=args.get("activity_level"),
+                date_of_birth=args.get("date_of_birth"),
+                is_admin=bool(args.get("is_admin") or False),
+            )
+            self.db.add(u)
+            self.db.commit()
+            self.db.refresh(u)
+            return {"id": u.id, "name": u.name, "is_admin": u.is_admin}
+        if tool_name == "admin_update_user":
+            uid = int(args.get("user_id"))
+            u = self.db.query(models.User).filter(models.User.id == uid).first()
+            if not u:
+                return {"error": "User not found"}
+            if args.get("name") is not None:
+                exists = self.db.query(models.User).filter(models.User.name == args["name"], models.User.id != uid).first()
+                if exists:
+                    return {"error": "Username already taken"}
+                u.name = args["name"]
+            if args.get("email") is not None:
+                if args.get("email"):
+                    exists_email = self.db.query(models.User).filter(models.User.email == args["email"], models.User.id != uid).first()
+                    if exists_email:
+                        return {"error": "Email already in use"}
+                    u.email = args["email"]
+                else:
+                    u.email = None
+            for fld in ["sex", "height", "activity_level", "date_of_birth"]:
+                if fld in args and args[fld] is not None:
+                    setattr(u, fld, args[fld])
+            self.db.commit()
+            self.db.refresh(u)
+            return {"id": u.id, "name": u.name}
+        if tool_name == "admin_set_user_password":
+            uid = int(args.get("user_id"))
+            new_pw = args.get("new_password") or ""
+            if len(new_pw) < 8:
+                return {"error": "Password must be at least 8 characters"}
+            from ..auth import get_password_hash  # type: ignore
+            u = self.db.query(models.User).filter(models.User.id == uid).first()
+            if not u:
+                return {"error": "User not found"}
+            u.password_hash = get_password_hash(new_pw)
+            self.db.commit()
+            return {"message": "Password updated"}
+        if tool_name == "admin_delete_user":
+            uid = int(args.get("user_id"))
+            u = self.db.query(models.User).filter(models.User.id == uid).first()
+            if not u:
+                return {"error": "User not found"}
+            self.db.delete(u)
+            self.db.commit()
+            return {"message": "User deleted"}
+        if tool_name == "admin_delete_target":
+            tid = int(args.get("target_id"))
+            t = self.db.query(models.TargetWeight).filter(models.TargetWeight.id == tid).first()
+            if not t:
+                return {"error": "Target not found"}
+            self.db.delete(t)
+            self.db.commit()
+            return {"message": "Target deleted"}
+        return None

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { userAPI, insightsAPI } from '../services/api';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area, BarChart, Bar, ReferenceArea } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area, BarChart, Bar, ReferenceArea, ReferenceLine } from 'recharts';
 import { format, differenceInCalendarDays, addDays } from 'date-fns';
 
 function Insights() {
@@ -157,7 +157,17 @@ function Insights() {
         <AdherenceCard summary={summary} dashboard={dashboard} />
       </div>
 
-      {/* Main layout: left (trends) and right (diagnostics/goals/what-if) */}
+      {/* Goals Overview (moved up): Goal analytics + Path to Active Goal */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+        <div className="lg:col-span-2">
+          <GoalAnalyticsSection goalAnalytics={goalAnalytics} dashboard={dashboard} />
+        </div>
+        <div>
+          <WhatIfSection dashboard={dashboard} />
+        </div>
+      </div>
+
+      {/* Main layout: left (trends) and right (diagnostics) */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left column */}
         <div className="lg:col-span-2 space-y-6">
@@ -330,11 +340,7 @@ function Insights() {
             </div>
           </div>
 
-          {/* Goal Analytics - Placeholder */}
-          <GoalAnalyticsSection goalAnalytics={goalAnalytics} />
-
-          {/* WhatÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬ËœIf Simulator - Placeholder */}
-          <WhatIfSection dashboard={dashboard} />
+          {/* (Goals moved above) */}
         </div>
       </div>
     </div>
@@ -490,21 +496,38 @@ function CompositionSection({ composition }) {
   );
 }
 
-function GoalAnalyticsSection({ goalAnalytics }) {
+function GoalAnalyticsSection({ goalAnalytics, dashboard }) {
   const rows = goalAnalytics?.rows || [];
+  const activeCount = rows.length;
+  const nearestEta = rows
+    .map(r => r.eta_conservative || r.eta_optimistic)
+    .filter(Boolean)
+    .sort((a,b)=> new Date(a) - new Date(b))[0];
 
   return (
     <div className="stat-card">
-      <p className="text-sm text-gray-600">Goal Analytics</p>
-      <div className="mt-2 overflow-x-auto">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-sm text-gray-600">Goals Overview</p>
+          <p className="text-xl font-semibold text-gray-900">Active Goals: {activeCount}</p>
+        </div>
+        {nearestEta && (
+          <div className="text-right">
+            <div className="text-xs text-gray-600">Nearest ETA</div>
+            <div className="text-sm font-medium text-gray-900">{format(new Date(nearestEta), 'yyyy-MM-dd')}</div>
+          </div>
+        )}
+      </div>
+
+      <div className="mt-3 overflow-x-auto">
         <table className="min-w-full text-sm">
           <thead>
             <tr className="text-gray-600">
               <th className="text-left pr-4">Goal</th>
-              <th className="text-right pr-4">Required Slope</th>
-              <th className="text-right pr-4">Recent Slope</th>
-              <th className="text-right pr-4">Prob. Score</th>
-              <th className="text-right">ETA (Cons-Opt)</th>
+              <th className="text-right pr-4">Required</th>
+              <th className="text-right pr-4">Recent</th>
+              <th className="text-right pr-4">Fit</th>
+              <th className="text-right">ETA</th>
             </tr>
           </thead>
           <tbody>
@@ -513,15 +536,53 @@ function GoalAnalyticsSection({ goalAnalytics }) {
                 <td className="py-2 text-gray-700" colSpan={5}>No active goals or insufficient data.</td>
               </tr>
             )}
-            {rows.map(r => (
-              <tr key={r.id} className="border-t">
-                <td className="py-1 text-gray-700">{r.goal_label}</td>
-                <td className="py-1 text-right">{r.required_slope_kg_per_week.toFixed(2)} kg/wk</td>
-                <td className="py-1 text-right">{r.recent_slope_kg_per_week.toFixed(2)} kg/wk</td>
-                <td className="py-1 text-right">{r.probability_score}</td>
-                <td className="py-1 text-right">{r.eta_conservative || r.eta_optimistic ? `${r.eta_conservative ?? '--'} - ${r.eta_optimistic ?? '--'}` : '--'}</td>
-              </tr>
-            ))}
+            {rows.map(r => {
+              const req = r.required_slope_kg_per_week;
+              const rec = r.recent_slope_kg_per_week;
+              const sameSign = (req === 0) || ((req > 0) === (rec > 0));
+              const ratio = req === 0 ? 1 : Math.min(2, Math.abs(rec) / (Math.abs(req) + 1e-6));
+              const pct = Math.round(Math.min(100, ratio * 100));
+              const fitLabel = sameSign ? (ratio >= 1 ? 'On Track' : 'Behind') : 'Opposite';
+              const fitColor = sameSign ? (ratio >= 1 ? 'bg-emerald-500' : 'bg-amber-500') : 'bg-rose-500';
+              const maxBar = Math.max(Math.abs(req), Math.abs(rec), 0.1);
+              const reqW = `${Math.round((Math.abs(req)/maxBar)*100)}%`;
+              const recW = `${Math.round((Math.abs(rec)/maxBar)*100)}%`;
+              return (
+                <tr key={r.id} className="border-t align-top">
+                  <td className="py-2 text-gray-800">
+                    <div className="font-medium">{r.goal_label}</div>
+                    <div className="mt-1 inline-flex gap-2">
+                      {r.eta_conservative && <span className="px-2 py-0.5 text-xs rounded-full bg-gray-100 text-gray-700">Cons: {r.eta_conservative}</span>}
+                      {r.eta_optimistic && <span className="px-2 py-0.5 text-xs rounded-full bg-gray-100 text-gray-700">Opt: {r.eta_optimistic}</span>}
+                    </div>
+                  </td>
+                  <td className="py-2 text-right whitespace-nowrap">
+                    {req.toFixed(2)} kg/wk
+                    <div className="mt-1 w-28 h-2 bg-gray-200 rounded">
+                      <div className="h-2 rounded bg-blue-400" style={{ width: reqW }} />
+                    </div>
+                  </td>
+                  <td className="py-2 text-right whitespace-nowrap">
+                    {rec.toFixed(2)} kg/wk
+                    <div className="mt-1 w-28 h-2 bg-gray-200 rounded">
+                      <div className="h-2 rounded bg-emerald-500" style={{ width: recW }} />
+                    </div>
+                  </td>
+                  <td className="py-2 text-right">
+                    <div className="flex items-center justify-end gap-2">
+                      <span className={`inline-block px-2 py-0.5 text-xs text-white rounded ${fitColor}`}>{fitLabel}</span>
+                      <div className="w-24 h-2 bg-gray-200 rounded">
+                        <div className="h-2 rounded bg-emerald-500" style={{ width: `${pct}%` }} />
+                      </div>
+                      <span className="text-xs text-gray-700">{r.probability_score}%</span>
+                    </div>
+                  </td>
+                  <td className="py-2 text-right text-gray-800">
+                    {r.eta_conservative || r.eta_optimistic ? `${r.eta_conservative ?? '--'} - ${r.eta_optimistic ?? '--'}` : '--'}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -535,7 +596,13 @@ function WhatIfSection({ dashboard }) {
   const nearest = targets
     .slice()
     .sort((a,b) => new Date(a.date_of_target) - new Date(b.date_of_target))[0];
-  const [weekly, setWeekly] = useState(-0.5); // kg/week (negative means loss)
+  const requiredWeekly = (() => {
+    if (!nearest || currentWeight == null) return null;
+    const targetWeight = parseFloat(nearest.target_weight);
+    const daysRemaining = Math.max(1, (new Date(nearest.date_of_target) - new Date()) / (1000*3600*24));
+    return (targetWeight - currentWeight) / (daysRemaining / 7);
+  })();
+  const [weekly, setWeekly] = useState(requiredWeekly ?? -0.5); // kg/week
 
   let finishText = '--';
   if (nearest && currentWeight != null) {
@@ -553,14 +620,72 @@ function WhatIfSection({ dashboard }) {
     }
   }
 
+  // Projection points for a simple linear path
+  const projData = useMemo(() => {
+    if (!nearest || currentWeight == null) return [];
+    const targetWeight = parseFloat(nearest.target_weight);
+    const signOk = (targetWeight >= currentWeight && weekly >= 0) || (targetWeight < currentWeight && weekly <= 0);
+    const maxDays = 180;
+    const out = [];
+    let w = currentWeight;
+    const daily = weekly / 7.0;
+    const today = new Date();
+    out.push({ dateLabel: format(today,'yyyy-MM-dd'), weight: w });
+    for (let d = 1; d <= maxDays; d++) {
+      w += daily;
+      const dt = addDays(today, d);
+      out.push({ dateLabel: format(dt,'yyyy-MM-dd'), weight: parseFloat(w.toFixed(2)) });
+      if (signOk) {
+        if ((daily >= 0 && w >= targetWeight) || (daily < 0 && w <= targetWeight)) break;
+      }
+    }
+    return out;
+  }, [nearest, currentWeight, weekly]);
+
   return (
     <div className="stat-card">
-      <p className="text-sm text-gray-600">Path To Goal Simulator</p>
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-gray-600">Path to Active Goal</p>
+        {nearest && (
+          <span className="text-xs text-gray-600">Target: {parseFloat(nearest.target_weight).toFixed(1)} kg by {nearest.date_of_target}</span>
+        )}
+      </div>
       {nearest ? (
-        <div className="mt-3">
-          <input type="range" min={-1.5} max={1.5} step={0.1} value={weekly} onChange={(e)=>setWeekly(parseFloat(e.target.value))} className="w-full" />
-          <div className="mt-2 text-sm text-gray-700">Expected weekly change: {weekly.toFixed(1)} kg/week</div>
-          <div className="text-sm text-gray-700">Estimated finish date: {finishText}</div>
+        <div className="mt-3 space-y-3">
+          <div className="grid grid-cols-3 gap-3 text-sm text-gray-800">
+            <div>
+              <div className="text-xs text-gray-600">Current</div>
+              <div className="font-semibold">{currentWeight?.toFixed(1)} kg</div>
+            </div>
+            <div>
+              <div className="text-xs text-gray-600">Required Pace</div>
+              <div className="font-semibold">{requiredWeekly != null ? `${requiredWeekly.toFixed(2)} kg/wk` : '--'}</div>
+            </div>
+            <div>
+              <div className="text-xs text-gray-600">Estimated Finish</div>
+              <div className="font-semibold">{finishText}</div>
+            </div>
+          </div>
+
+          <div>
+            <input type="range" min={-1.5} max={1.5} step={0.1} value={weekly} onChange={(e)=>setWeekly(parseFloat(e.target.value))} className="w-full" />
+            <div className="mt-1 text-sm text-gray-700">Selected weekly change: {weekly.toFixed(1)} kg/week</div>
+          </div>
+
+          <div style={{ width: '100%', height: 180 }}>
+            <ResponsiveContainer>
+              <LineChart data={projData} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="dateLabel" hide minTickGap={24} />
+                <YAxis tick={{ fontSize: 12 }} domain={['auto','auto']} />
+                <Tooltip formatter={(v) => `${v} kg`} labelFormatter={(l) => l} />
+                <Line type="monotone" dataKey="weight" stroke="#2563eb" strokeWidth={2} dot={false} name="Projected" />
+                {nearest && (
+                  <ReferenceLine y={parseFloat(nearest.target_weight)} stroke="#10b981" strokeDasharray="4 4" label={{ value: 'Target', position: 'left', fill: '#065f46', fontSize: 12 }} />
+                )}
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
         </div>
       ) : (
         <p className="mt-2 text-sm text-gray-700">Add an active goal to simulate path.</p>

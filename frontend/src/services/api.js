@@ -85,7 +85,9 @@ export const targetAPI = {
 // Admin APIs
 export const adminAPI = {
   listUsers: () => api.get('/api/admin/users'),
+  createUser: (data, isAdmin = false) => api.post('/api/admin/users', data, { params: { is_admin: isAdmin } }),
   setAdmin: (userId, isAdmin) => api.put(`/api/admin/users/${userId}/admin`, null, { params: { is_admin: isAdmin } }),
+  updateUser: (userId, data) => api.put(`/api/admin/users/${userId}`, data),
   deleteTarget: (targetId) => api.delete(`/api/admin/targets/${targetId}`),
   getUser: (userId) => api.get(`/api/admin/users/${userId}`),
   getUserTargets: (userId) => api.get(`/api/admin/users/${userId}/targets`),
@@ -103,6 +105,11 @@ export const insightsAPI = {
   getSeasonality: (params = {}) => api.get('/api/insights/seasonality', { params }),
   getGoalAnalytics: () => api.get('/api/insights/goal-analytics'),
   getCalendar: (days = 365) => api.get('/api/insights/calendar', { params: { days } }),
+};
+
+// Chat API
+export const chatAPI = {
+  send: (messages) => api.post('/api/chat', { messages }),
 };
 
 export default api;

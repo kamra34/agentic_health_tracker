@@ -175,7 +175,7 @@ function Insights() {
   return (
     <div>
       <div className="mb-6">
-        <h1 className="text-3xl font-bold text-gray-800">Insights & Analytics</h1>
+        <h1 className="text-3xl font-bold text-gray-800"></h1>
       </div>
 
       {/* Top Summary Strip */}

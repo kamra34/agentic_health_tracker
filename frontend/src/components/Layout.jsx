@@ -1,6 +1,7 @@
 import { Outlet, NavLink } from 'react-router-dom';
 import { Home, TrendingUp, Target, BarChart3, LogOut, User } from 'lucide-react';
 import useAuthStore from '../stores/authStore';
+import ChatWidget from './ChatWidget';
 
 function Layout() {
   const { user, logout } = useAuthStore();
@@ -65,6 +66,9 @@ function Layout() {
       <main className="ml-64 min-h-screen p-8">
         <Outlet />
       </main>
+
+      {/* Floating Chat Widget */}
+      <ChatWidget />
     </div>
   );
 }

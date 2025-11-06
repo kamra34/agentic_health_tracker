@@ -23,6 +23,87 @@ def list_users(
     return users
 
 
+@router.post("/users", response_model=schemas.User, status_code=status.HTTP_201_CREATED)
+def create_user(
+    user: schemas.UserCreate,
+    is_admin: bool = False,
+    admin_user: models.User = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """Create a new user (admin only).
+    - Required fields: name, password
+    - Optional: email, sex, height, activity_level, date_of_birth
+    - Optional query param: is_admin (default False)
+    """
+    from ..auth import get_password_hash
+    # Uniqueness checks
+    existing_user = db.query(models.User).filter(models.User.name == user.name).first()
+    if existing_user:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Username already registered")
+    if user.email:
+        existing_email = db.query(models.User).filter(models.User.email == user.email).first()
+        if existing_email:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
+
+    db_user = models.User(
+        name=user.name,
+        email=user.email,
+        password_hash=get_password_hash(user.password),
+        sex=user.sex,
+        height=user.height,
+        activity_level=user.activity_level,
+        date_of_birth=user.date_of_birth,
+        is_admin=bool(is_admin),
+    )
+    db.add(db_user)
+    db.commit()
+    db.refresh(db_user)
+    return db_user
+
+
+@router.put("/users/{user_id}", response_model=schemas.User)
+def update_user(
+    user_id: int,
+    data: schemas.UserUpdate,
+    admin_user: models.User = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """Update a user's profile fields (admin only)."""
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    # Name uniqueness
+    if data.name is not None:
+        existing = db.query(models.User).filter(models.User.name == data.name, models.User.id != user_id).first()
+        if existing:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Username already taken")
+        user.name = data.name
+
+    # Email uniqueness
+    if data.email is not None:
+        if data.email:
+            existing_email = db.query(models.User).filter(models.User.email == data.email, models.User.id != user_id).first()
+            if existing_email:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already in use")
+            user.email = data.email
+        else:
+            user.email = None
+
+    if data.sex is not None:
+        user.sex = data.sex
+    if data.height is not None:
+        user.height = data.height
+    if data.activity_level is not None:
+        user.activity_level = data.activity_level
+    if data.date_of_birth is not None:
+        user.date_of_birth = data.date_of_birth
+
+    db.commit()
+    db.refresh(user)
+    return user
+
+
 @router.put("/users/{user_id}/admin", response_model=schemas.User)
 def set_user_admin(
     user_id: int,

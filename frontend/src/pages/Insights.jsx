@@ -283,16 +283,41 @@ function Insights() {
               <li>Biggest 7‑day drop: {summary?.milestones?.biggest_7d_drop_kg != null ? `${summary.milestones.biggest_7d_drop_kg} kg` : '--'}</li>
             </ul>
           </div>
+		  <div className="stat-card bg-gradient-to-br from-amber-50 to-orange-100 border-amber-200">
+			<div className="flex items-center justify-between">
+			  <p className="text-sm text-gray-700">Diagnostics</p>
+			  <span title="Plateau checks last 5 days for near-flat changes; Regress-to-mean checks if large spikes are followed by opposite moves toward the average." className="ml-2 inline-flex items-center justify-center w-5 h-5 text-[10px] font-semibold rounded-full border border-gray-300 text-gray-600 bg-white cursor-help">i</span>
+			</div>
+			<div className="mt-2 grid grid-cols-2 gap-3 text-sm text-gray-800">
+			  <div>
+				<div className="text-xs text-gray-600">Plateau</div>
+				<div className="font-semibold">
 
-          {/* Diagnostics */}
-          <div className={`stat-card ${summary?.plateau_flag ? 'bg-yellow-50 border-yellow-200' : ''}`}>
-            <p className="text-sm text-gray-600">Diagnostics</p>
-            <ul className="mt-2 text-sm text-gray-700 list-disc list-inside">
-              <li>Plateau: {summary?.plateau_flag ? 'Possible' : 'No'}</li>
-              <li>Outliers (last 30d): {outlierCount30d} points</li>
-              <li>Regress‑to‑mean: heuristic coming soon</li>
-            </ul>
-          </div>
+</div>
+			  </div>
+			  <div>
+				<div className="text-xs text-gray-600">Outliers (30d)</div>
+				<div className="font-semibold">
+
+</div>
+			  </div>
+			  <div className="col-span-2">
+				<div className="text-xs text-gray-600">Regress-to-Mean (trend window)</div>
+				{summary?.rtm ? (
+				  <div>
+					<div className="font-semibold">{Math.round(((summary.rtm.rate || 0) * 100))}% of extremes revert ({summary.rtm.reversions}/{summary.rtm.extremes})</div>
+					<div className="text-xs text-gray-600">Window: {summary.rtm.window_start} � {summary.rtm.window_end}</div>
+					{summary.rtm.example_dates && summary.rtm.example_dates.length > 0 && (
+					  <div className="mt-1 text-xs text-gray-700">Examples: {summary.rtm.example_dates.join(
+)}</div>
+					)}
+				  </div>
+				) : (
+				  <div className="font-semibold">Not enough data</div>
+				)}
+			  </div>
+			</div>
+		  </div>
 
           {/* Goal Analytics - Placeholder */}
           <GoalAnalyticsSection goalAnalytics={goalAnalytics} />

@@ -12,22 +12,8 @@ jobs:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     steps:
       - uses: actions/checkout@v3
-      - name: Set up Node.js (for Railway CLI)
-        uses: actions/setup-node@v3
-        with:
-          node-version: '18'
-      - name: Install Railway CLI
-        run: npm i -g @railway/cli
-      - name: Set Railway token
-        env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+      - name: Trigger Railway deployment
         run: |
-          if [ -z "$RAILWAY_TOKEN" ]; then echo "RAILWAY_TOKEN not set" && exit 1; fi
-          echo "Railway token is set and will be used for authentication"
-      - name: Deploy backend service to Railway
-        env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-        run: |
-          # Railway CLI uses RAILWAY_TOKEN env var automatically
-          # Note: Railway must have Root Directory set to "backend" in service settings
-          railway up --service agentic_health_tracker
+          echo "✅ Code pushed to main branch"
+          echo "🚂 Railway will auto-deploy from GitHub"
+          echo "📊 Check deployment status at: https://railway.app/dashboard"

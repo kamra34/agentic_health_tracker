@@ -114,6 +114,7 @@ function Insights() {
   }, [distributions]);
   const recentStd = distributions?.recent_std ?? 0;
   const outlierCount30d = distributions?.outliers_last_30d ?? 0;
+  const currentUnits = metric === "weight" ? "kg" : "";
   // KPI range subtitles
   const rangeStr = (s, e) => (s && e ? `${format(new Date(s), 'yyyy-MM-dd')} - ${format(new Date(e), 'yyyy-MM-dd')}` : undefined);
   const trendRange = rangeStr(summary?.trend_window_start, summary?.trend_window_end);

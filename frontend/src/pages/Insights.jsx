@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useRef, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { userAPI, insightsAPI, targetAPI } from '../services/api';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area, BarChart, Bar, ReferenceArea, ReferenceLine, PieChart, Pie, Cell, Legend } from 'recharts';
@@ -12,6 +12,11 @@ function Insights() {
   const [method, setMethod] = useState('holt'); // 'holt' | 'ses' | 'ols' | 'poly2'
   // Diagnostics controls (independent window; default 3 months)
   const [diagWindow, setDiagWindow] = useState(90);
+
+  // Goals Overview height sync for TargetsHistorySection
+  const goalsOverviewRef = useRef(null);
+  const [goalsHeight, setGoalsHeight] = useState(null);
+  // measurement effect added later after goalAnalytics is defined
 
   // Diagnostics-scoped data (depends on diagWindow)
   const { data: summaryDiag } = useQuery({
@@ -58,6 +63,17 @@ function Insights() {
     queryKey: ['insights','goal-analytics'],
     queryFn: async () => (await insightsAPI.getGoalAnalytics()).data,
   });
+  // Measure Goals Overview height when data loads/resizes
+  useEffect(() => {
+    const measure = () => {
+      if (goalsOverviewRef.current) {
+        setGoalsHeight(goalsOverviewRef.current.offsetHeight);
+      }
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, [goalAnalytics]);
   // All targets history (for visuals)
   const { data: allTargets } = useQuery({
     queryKey: ['targets','all'],
@@ -162,18 +178,26 @@ function Insights() {
         <AdherenceCard summary={summary} dashboard={dashboard} />
       </div>
 
-      {/* Goals Overview (moved up): Goal analytics + Path to Active Goal */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-        <div className="lg:col-span-2">
-          <GoalAnalyticsSection goalAnalytics={goalAnalytics} dashboard={dashboard} />
-        </div>
-        <div>
-          <WhatIfSection dashboard={dashboard} />
-        </div>
-      </div>
-
-      {/* Targets History & Stats */}
-      <TargetsHistorySection targets={allTargets} />
+      {/* Goals Overview (left) and Path to Active Goal (right) */}
+      {(() => {
+        // Measure Goals Overview height to match the three-cards row below
+        const goalsRef = goalsOverviewRef;
+        return (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6 items-start">
+            <div className="lg:col-span-2">
+              <div ref={goalsRef}>
+                <GoalAnalyticsSection goalAnalytics={goalAnalytics} dashboard={dashboard} />
+              </div>
+              <div className="mt-6" style={{ minHeight: (goalsHeight != null ? `${goalsHeight}px` : undefined) }}>
+                <TargetsHistorySection targets={allTargets} />
+              </div>
+            </div>
+            <div>
+              <WhatIfSection dashboard={dashboard} />
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Main layout: left (trends) and right (diagnostics) */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -599,48 +623,49 @@ function GoalAnalyticsSection({ goalAnalytics, dashboard }) {
 }
 
 function WhatIfSection({ dashboard }) {
-  const targets = dashboard?.active_targets || [];
   const currentWeight = dashboard?.stats?.current_weight != null ? parseFloat(dashboard.stats.current_weight) : null;
-  const nearest = targets
-    .slice()
-    .sort((a,b) => new Date(a.date_of_target) - new Date(b.date_of_target))[0];
-  const requiredWeekly = useMemo(() => {
-    if (!nearest || currentWeight == null) return null;
-    const targetWeight = parseFloat(nearest.target_weight);
-    const created = new Date(nearest.created_date);
-    const startW = nearest.starting_weight != null ? parseFloat(nearest.starting_weight) : currentWeight;
-    const totalDays = Math.max(1, (new Date(nearest.date_of_target) - created) / (1000*3600*24));
-    return (targetWeight - startW) / (totalDays / 7);
-  }, [nearest, currentWeight]);
-  const [weekly, setWeekly] = useState(requiredWeekly ?? -0.5); // kg/week
+  const heightCm = dashboard?.user?.height != null ? parseFloat(dashboard.user.height) : null;
+  const hM = heightCm ? (heightCm / 100.0) : null;
+
+  // BMI normal range
+  const BMI_MIN = 18.5;
+  const BMI_MAX = 24.9;
+  const weightMin = hM ? BMI_MIN * hM * hM : null;
+  const weightMax = hM ? BMI_MAX * hM * hM : null;
+  const targetWeight = weightMax != null ? parseFloat(weightMax.toFixed(1)) : null; // default highest weight in normal range
+  const targetBMI = BMI_MAX;
+
+  const [weekly, setWeekly] = useState(() => {
+    if (currentWeight == null || targetWeight == null) return -0.5;
+    const delta = targetWeight - currentWeight;
+    return delta >= 0 ? 0.5 : -0.5;
+  });
 
   let finishText = '--';
-  if (nearest && currentWeight != null) {
-    const targetWeight = parseFloat(nearest.target_weight);
+  if (currentWeight != null && targetWeight != null) {
     const delta = targetWeight - currentWeight; // kg to change
     if (weekly === 0) {
       finishText = 'No change at 0 kg/wk';
     } else if ((delta > 0 && weekly < 0) || (delta < 0 && weekly > 0)) {
-      finishText = 'Unreachable with selected pace';
+      finishText = 'Pace direction does not reach target';
     } else {
       const weeks = Math.abs(delta / weekly);
       const days = Math.round(weeks * 7);
       const finish = addDays(new Date(), days);
-      finishText = `${format(finish,'yyyy-MM-dd')} (~${Math.round(weeks)} wks)`;
+      finishText = `${format(finish,'yyyy-MM-dd')} (~${Math.max(1, Math.round(weeks))} wks)`;
     }
   }
 
   // Projection points for a simple linear path
   const projData = useMemo(() => {
-    if (!nearest || currentWeight == null) return [];
-    const targetWeight = parseFloat(nearest.target_weight);
+    if (currentWeight == null || targetWeight == null) return [];
     const signOk = (targetWeight >= currentWeight && weekly >= 0) || (targetWeight < currentWeight && weekly <= 0);
-    const maxDays = 180;
+    const maxDays = 240;
     const out = [];
     let w = currentWeight;
     const daily = weekly / 7.0;
     const today = new Date();
-    out.push({ dateLabel: format(today,'yyyy-MM-dd'), weight: w });
+    out.push({ dateLabel: format(today,'yyyy-MM-dd'), weight: parseFloat(w.toFixed(2)) });
     for (let d = 1; d <= maxDays; d++) {
       w += daily;
       const dt = addDays(today, d);
@@ -650,55 +675,87 @@ function WhatIfSection({ dashboard }) {
       }
     }
     return out;
-  }, [nearest, currentWeight, weekly]);
+  }, [currentWeight, targetWeight, weekly]);
+
+  // Build X-axis ticks and formatter based on timeline length
+  const xAxis = useMemo(() => {
+    if (!projData || projData.length === 0) return { ticks: [], fmt: (x) => x };
+    const start = new Date(projData[0].dateLabel);
+    const end = new Date(projData[projData.length - 1].dateLabel);
+    const totalDays = differenceInCalendarDays(end, start);
+    const step = totalDays <= 30 ? 5 : totalDays <= 120 ? 7 : 30; // daily-ish, weekly, monthly
+    const ticks = [];
+    let d = new Date(start);
+    while (d <= end) {
+      ticks.push(format(d, 'yyyy-MM-dd'));
+      d = addDays(d, step);
+    }
+    const fmt = (val) => {
+      const dt = new Date(val);
+      if (totalDays <= 30) return format(dt, 'MMM d');
+      if (totalDays <= 120) return format(dt, 'MMM d');
+      return format(dt, 'MMM yyyy');
+    };
+    return { ticks, fmt };
+  }, [projData]);
+
+  const weeklyDot = (props) => {
+    const { cx, cy, index } = props;
+    // Show a small dot roughly each week to avoid clutter
+    return index % 7 === 0 ? (
+      <circle cx={cx} cy={cy} r={2} fill="#2563eb" stroke="none" />
+    ) : null;
+  };
 
   return (
-    <div className="stat-card">
+    <div className="stat-card rounded-2xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-sky-50 shadow-sm">
       <div className="flex items-center justify-between">
-        <p className="text-sm text-gray-600">Path to Active Goal</p>
-        {nearest && (
-          <span className="text-xs text-gray-600">Target: {parseFloat(nearest.target_weight).toFixed(1)} kg by {nearest.date_of_target}</span>
-        )}
+        <p className="text-sm text-gray-700 font-medium">Healthy BMI Range Planner</p>
       </div>
-      {nearest ? (
+      {hM ? (
         <div className="mt-3 space-y-3">
-          <div className="grid grid-cols-3 gap-3 text-sm text-gray-800">
+          <div className="grid grid-cols-2 gap-3 text-sm text-gray-800">
+            <div>
+              <div className="text-xs text-gray-600">BMI Normal Range</div>
+              <div className="font-semibold">{BMI_MIN} - {BMI_MAX}</div>
+            </div>
+            <div>
+              <div className="text-xs text-gray-600">Weight Range (kg)</div>
+              <div className="font-semibold">{weightMin?.toFixed(1)} - {weightMax?.toFixed(1)} kg</div>
+            </div>
+            <div>
+              <div className="text-xs text-gray-600">Target (highest normal)</div>
+              <div className="font-semibold">{targetWeight?.toFixed(1)} kg (BMI {targetBMI})</div>
+            </div>
             <div>
               <div className="text-xs text-gray-600">Current</div>
-              <div className="font-semibold">{currentWeight?.toFixed(1)} kg</div>
-            </div>
-            <div>
-              <div className="text-xs text-gray-600">Required Pace</div>
-              <div className="font-semibold">{requiredWeekly != null ? `${requiredWeekly.toFixed(2)} kg/wk` : '--'}</div>
-            </div>
-            <div>
-              <div className="text-xs text-gray-600">Estimated Finish</div>
-              <div className="font-semibold">{finishText}</div>
+              <div className="font-semibold">{currentWeight != null ? `${currentWeight.toFixed(1)} kg` : '--'}</div>
             </div>
           </div>
 
           <div>
             <input type="range" min={-1.5} max={1.5} step={0.1} value={weekly} onChange={(e)=>setWeekly(parseFloat(e.target.value))} className="w-full" />
             <div className="mt-1 text-sm text-gray-700">Selected weekly change: {weekly.toFixed(1)} kg/week</div>
+            <div className="text-sm text-gray-700">Estimated finish: {finishText}</div>
           </div>
 
-          <div style={{ width: '100%', height: 180 }}>
+          <div className="rounded-lg border border-emerald-100 bg-white/60" style={{ width: '100%', height: 200 }}>
             <ResponsiveContainer>
               <LineChart data={projData} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="dateLabel" hide minTickGap={24} />
+                <XAxis dataKey="dateLabel" tick={{ fontSize: 11, fill: '#374151' }} minTickGap={18} ticks={xAxis.ticks} tickFormatter={xAxis.fmt} />
                 <YAxis tick={{ fontSize: 12 }} domain={['auto','auto']} />
                 <Tooltip formatter={(v) => `${v} kg`} labelFormatter={(l) => l} />
-                <Line type="monotone" dataKey="weight" stroke="#2563eb" strokeWidth={2} dot={false} name="Projected" />
-                {nearest && (
-                  <ReferenceLine y={parseFloat(nearest.target_weight)} stroke="#10b981" strokeDasharray="4 4" label={{ value: 'Target', position: 'left', fill: '#065f46', fontSize: 12 }} />
+                <Line type="monotone" dataKey="weight" stroke="#2563eb" strokeWidth={2} dot={weeklyDot} activeDot={{ r: 3 }} name="Projected" />
+                {targetWeight != null && (
+                  <ReferenceLine y={targetWeight} stroke="#10b981" strokeDasharray="4 4" label={{ value: `Target ${targetWeight.toFixed(1)} kg`, position: 'left', fill: '#065f46', fontSize: 12 }} />
                 )}
               </LineChart>
             </ResponsiveContainer>
           </div>
         </div>
       ) : (
-        <p className="mt-2 text-sm text-gray-700">Add an active goal to simulate path.</p>
+        <p className="mt-2 text-sm text-gray-700">Add your height in profile to view BMI-based healthy range planning.</p>
       )}
     </div>
   );
@@ -866,106 +923,66 @@ function TargetsHistorySection({ targets }) {
   const t = targets || [];
   if (!t.length) return null;
 
+  // Normalize statuses (DB may use: Success, Failed, active, cancelled, completed)
   const statusCounts = t.reduce((acc, x) => {
-    const s = (x.status || 'unknown').toLowerCase();
+    let s = (x.status || 'unknown').toString().toLowerCase();
+    if (s === 'success' || s === 'completed') s = 'success';
+    else if (s === 'failed') s = 'failed';
+    else if (s === 'cancelled') s = 'cancelled';
+    else if (s === 'active') s = 'active';
     acc[s] = (acc[s] || 0) + 1;
     return acc;
   }, {});
   const total = t.length;
-  const completed = statusCounts['completed'] || 0;
-  const cancelled = (statusCounts['cancelled'] || statusCounts['failed']) || 0;
+  const successes = statusCounts['success'] || 0;
+  const failed = statusCounts['failed'] || 0;
+  const cancelled = statusCounts['cancelled'] || 0;
   const active = statusCounts['active'] || 0;
-  const successRate = total ? Math.round((completed / total) * 100) : 0;
+  // Success rate considers only resolved outcomes (success vs failed)
+  const denom = successes + failed;
+  const successRate = denom ? Math.round((successes / denom) * 100) : 0;
 
-  const COLORS = ['#10b981', '#f59e0b', '#ef4444', '#60a5fa'];
+  const COLORS = ['#10b981', '#ef4444', '#60a5fa', '#9ca3af'];
   const pieData = [
+    { name: 'Success', value: successes },
+    { name: 'Failed', value: failed },
     { name: 'Active', value: active },
-    { name: 'Completed', value: completed },
     { name: 'Cancelled', value: cancelled },
   ].filter(d => d.value > 0);
 
-  // Required pace per target (kg/week) based on created_date -> date_of_target
-  const paceRows = t.map(x => {
-    const startW = x.starting_weight != null ? parseFloat(x.starting_weight) : (x.current_weight != null ? parseFloat(x.current_weight) : null);
-    const targetW = x.target_weight != null ? parseFloat(x.target_weight) : null;
-    const created = x.created_date ? new Date(x.created_date) : null;
-    const due = x.date_of_target ? new Date(x.date_of_target) : null;
-    let req = null;
-    if (startW != null && targetW != null && created && due) {
-      const totalDays = Math.max(1, (due - created) / (1000*3600*24));
-      req = (targetW - startW) / (totalDays / 7);
-    }
-    let ach = null;
-    if (req != null && x.final_weight != null) {
-      ach = (parseFloat(x.final_weight) - startW) / ((Math.max(1, (due - created) / (1000*3600*24))) / 7);
-    }
-    return { id: x.id, label: `${targetW?.toFixed?.(1) ?? '--'} kg by ${x.date_of_target}`, status: x.status, req, ach };
-  }).filter(r => r.req != null);
-
-  const avgReq = paceRows.length ? (paceRows.reduce((a,b)=>a+(b.req||0),0)/paceRows.length) : 0;
-  const avgAch = paceRows.filter(r=>r.ach!=null).length ? (paceRows.filter(r=>r.ach!=null).reduce((a,b)=>a+(b.ach||0),0)/paceRows.filter(r=>r.ach!=null).length) : null;
-
-  // Pace histogram bins
-  const bins = (() => {
-    const values = paceRows.map(r=>r.req);
-    if (!values.length) return [];
-    const mn = Math.min(...values), mx = Math.max(...values);
-    const nb = Math.min(10, Math.max(5, values.length));
-    const width = (mx - mn) || 1;
-    const step = width / nb;
-    const counts = Array.from({length: nb},()=>0);
-    for (const v of values) {
-      let idx = Math.floor((v - mn) / (step||1));
-      if (idx >= nb) idx = nb-1;
-      if (idx < 0) idx = 0;
-      counts[idx]++;
-    }
-    return counts.map((c,i)=>({ bin: (mn + i*step).toFixed(2), count: c }));
-  })();
-
+  // Three cards horizontally, same height
   return (
-    <div className="card">
-      <h2 className="text-lg font-semibold text-gray-800 mb-2">Targets History & Stats</h2>
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="space-y-3">
-          <div className="grid grid-cols-2 gap-3">
-            <KpiCard label="Total Targets" value={total} />
-            <KpiCard label="Success Rate" value={`${successRate}%`} />
-          </div>
-          <div className="w-full" style={{height:220}}>
-            <ResponsiveContainer>
-              <PieChart>
-                <Pie data={pieData} dataKey="value" nameKey="name" innerRadius={40} outerRadius={70} paddingAngle={2}>
-                  {pieData.map((entry, index) => (
-                    <Cell key={`slice-${index}`} fill={COLORS[index % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Legend verticalAlign="bottom" height={36} />
-                <Tooltip />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6 items-stretch">
+      <div className="stat-card h-full flex flex-col justify-between">
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-gray-600">Total Targets</p>
         </div>
-
-        <div className="lg:col-span-2 space-y-4">
-          <div className="grid grid-cols-2 gap-3">
-            <KpiCard label="Avg Required Pace" value={`${avgReq.toFixed(2)} kg/wk`} />
-            <KpiCard label="Avg Achieved Pace" value={avgAch != null ? `${avgAch.toFixed(2)} kg/wk` : '--'} />
-          </div>
-          <div>
-            <p className="text-sm text-gray-600 mb-2">Required Pace Distribution</p>
-            <div style={{ width: '100%', height: 220 }}>
-              <ResponsiveContainer>
-                <BarChart data={bins}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="bin" />
-                  <YAxis allowDecimals={false} />
-                  <Tooltip />
-                  <Bar dataKey="count" fill="#60a5fa" />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
+        <div className="text-4xl font-bold text-gray-900 mt-2">{total}</div>
+        <div className="text-xs text-gray-500 mt-2">Across all time</div>
+      </div>
+      <div className="stat-card h-full flex flex-col justify-between">
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-gray-600">Success Rate</p>
+        </div>
+        <div className="text-4xl font-bold text-gray-900 mt-2">{successRate}%</div>
+        <div className="text-xs text-gray-500 mt-2">Resolved goals (Success vs Failed)</div>
+      </div>
+      <div className="stat-card h-full flex flex-col">
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-gray-600">Outcomes Breakdown</p>
+        </div>
+        <div className="flex-1 min-h-[180px]">
+          <ResponsiveContainer>
+            <PieChart>
+              <Pie data={pieData} dataKey="value" nameKey="name" innerRadius={40} outerRadius={70} paddingAngle={2}>
+                {pieData.map((entry, index) => (
+                  <Cell key={`slice-${index}`} fill={COLORS[index % COLORS.length]} />
+                ))}
+              </Pie>
+              <Legend verticalAlign="bottom" height={36} />
+              <Tooltip />
+            </PieChart>
+          </ResponsiveContainer>
         </div>
       </div>
     </div>

@@ -556,15 +556,15 @@ function GoalAnalyticsSection({ goalAnalytics, dashboard }) {
                       {r.eta_optimistic && <span className="px-2 py-0.5 text-xs rounded-full bg-gray-100 text-gray-700">Opt: {r.eta_optimistic}</span>}
                     </div>
                   </td>
-                  <td className="py-2 text-right whitespace-nowrap">
-                    {req.toFixed(2)} kg/wk
-                    <div className="mt-1 w-28 h-2 bg-gray-200 rounded">
+                  <td className="py-2 text-right whitespace-nowrap text-gray-900">
+                    <div className="font-medium">{req.toFixed(2)} kg/wk</div>
+                    <div className="mt-1 w-28 h-2 bg-gray-200 rounded ml-auto">
                       <div className="h-2 rounded bg-blue-400" style={{ width: reqW }} />
                     </div>
                   </td>
-                  <td className="py-2 text-right whitespace-nowrap">
-                    {rec.toFixed(2)} kg/wk
-                    <div className="mt-1 w-28 h-2 bg-gray-200 rounded">
+                  <td className="py-2 text-right whitespace-nowrap text-gray-900">
+                    <div className="font-medium">{rec.toFixed(2)} kg/wk</div>
+                    <div className="mt-1 w-28 h-2 bg-gray-200 rounded ml-auto">
                       <div className="h-2 rounded bg-emerald-500" style={{ width: recW }} />
                     </div>
                   </td>

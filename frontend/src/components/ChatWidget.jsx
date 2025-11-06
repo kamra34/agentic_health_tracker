@@ -120,11 +120,7 @@ function ChatWidget() {
         pollRef.current = setInterval(poll, 800);
         await poll();
       }
-      // After assistant reply, proactively refresh key queries so UI reflects any server-side changes
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
-      queryClient.invalidateQueries({ queryKey: ['weights'] });
-      queryClient.invalidateQueries({ queryKey: ['targets'] });
-      queryClient.invalidateQueries({ queryKey: ['insights'] });
+      // Query invalidation moved to finalizeReply (after completion)
     } catch (e) {
       setMessages((m) => [...m, { role: 'assistant', content: 'Sorry, chat is unavailable right now.' }]);
     } finally {
@@ -134,6 +130,11 @@ function ChatWidget() {
 
   const finalizeReply = (reply) => {
     setMessages((m) => [...m, { role: 'assistant', content: reply || 'Done.' }]);
+    // Refresh key queries so UI reflects server-side changes (tables update without full page refresh)
+    queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+    queryClient.invalidateQueries({ queryKey: ['weights'] });
+    queryClient.invalidateQueries({ queryKey: ['targets'] });
+    queryClient.invalidateQueries({ queryKey: ['insights'] });
   };
 
   const titleForAgent = (agent) => {

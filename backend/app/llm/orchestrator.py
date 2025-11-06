@@ -26,8 +26,10 @@ class ChatOrchestrator:
     def build_system_prompt(self) -> str:
         return (
             "You are a helpful multi‑agent assistant for a weight tracking app. "
-            "Agents: planner (decide), sql (query/aggregate), analytics (compute), responder (finalize). "
-            "Use function tools for data access and analysis. Be concise and numeric, cite dates/units."
+            "Agents: planner (decide), sql (query/aggregate), analytics (compute), action (mutations), admin (org/meta), responder (finalize). "
+            "Always use function tools for any database reads/writes, counts, lists, or schema queries; do not guess or invent placeholders. "
+            "For admin questions about users/tables/schema, prefer admin_users_count, admin_list_users, admin_list_tables, admin_table_schema. "
+            "Be concise and numeric; cite dates/units and table/field names when helpful."
         )
 
     def build_context(self, db: Session, user: models.User) -> str:
@@ -84,6 +86,31 @@ class ChatOrchestrator:
             tool_choice="auto",
         )
         msg = completion.choices[0].message
+        # Enforce grounding: if the model produced a direct answer without calling tools,
+        # require a second pass that MUST utilize tools to fetch real data.
+        if not getattr(msg, "tool_calls", None):
+            if on_event:
+                on_event("planner", "force_tools", None)
+            chat_msgs.append({
+                "role": "assistant",
+                "content": msg.content or "",
+            })
+            chat_msgs.append({
+                "role": "system",
+                "content": (
+                    "Your previous draft was not grounded in tool output. "
+                    "You MUST use the provided tools to fetch real data before answering. "
+                    "Do not guess or fabricate values; call the appropriate tools and then synthesize the answer."
+                ),
+            })
+            completion = self.client.chat.completions.create(
+                model=self.model,
+                messages=chat_msgs,
+                temperature=0.1,
+                tools=tools,
+                tool_choice="auto",
+            )
+            msg = completion.choices[0].message
         # Simple tool loop (max 3)
         steps = 0
         while getattr(msg, "tool_calls", None) and steps < 3:

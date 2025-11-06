@@ -2,17 +2,14 @@
 Debug Authentication Issues
 Check user data and test password hashing
 """
+import os
 import psycopg2
 from passlib.context import CryptContext
+from dotenv import load_dotenv
 
-# Database connection
-DB_CONFIG = {
-    'host': 'eu1.pitunnel.com',
-    'port': 20877,
-    'user': 'kami',
-    'password': '4444',
-    'database': 'wtracker_dev'
-}
+# Load environment and use DATABASE_URL to avoid hardcoding DB names
+load_dotenv()
+DATABASE_URL = os.getenv("DATABASE_URL")
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -20,7 +17,7 @@ def check_users():
     """Check what users exist in the database"""
     print("🔍 Checking users in database...")
     
-    conn = psycopg2.connect(**DB_CONFIG)
+    conn = psycopg2.connect(DATABASE_URL)
     cursor = conn.cursor()
     
     cursor.execute("""
@@ -53,7 +50,7 @@ def test_password(username, password):
     """Test if a password works for a user"""
     print(f"\n🔐 Testing login for: {username}")
     
-    conn = psycopg2.connect(**DB_CONFIG)
+    conn = psycopg2.connect(DATABASE_URL)
     cursor = conn.cursor()
     
     cursor.execute("""
@@ -97,7 +94,7 @@ def reset_password(username, new_password):
     """Reset a user's password"""
     print(f"\n🔄 Resetting password for: {username}")
     
-    conn = psycopg2.connect(**DB_CONFIG)
+    conn = psycopg2.connect(DATABASE_URL)
     cursor = conn.cursor()
     
     # Generate new hash
@@ -128,7 +125,7 @@ def check_database_connection():
     print("🔍 Testing database connection...")
     
     try:
-        conn = psycopg2.connect(**DB_CONFIG)
+        conn = psycopg2.connect(DATABASE_URL)
         cursor = conn.cursor()
         
         cursor.execute("SELECT version();")

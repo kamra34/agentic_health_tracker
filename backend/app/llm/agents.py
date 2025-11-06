@@ -605,6 +605,50 @@ class AdminAgent(BaseAgent):
         if not self.user.is_admin:
             return []
         return [
+            # Read-only admin/meta tools
+            {
+                "type": "function",
+                "function": {
+                    "name": "admin_users_count",
+                    "description": "Count rows in users table (admin)",
+                    "parameters": {"type": "object", "properties": {}, "required": []},
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "admin_list_users",
+                    "description": "List users with safe fields only (admin)",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "limit": {"type": ["integer", "null"], "minimum": 1, "maximum": 1000},
+                            "offset": {"type": ["integer", "null"], "minimum": 0},
+                        },
+                        "required": [],
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "admin_list_tables",
+                    "description": "List all tables in the database (admin)",
+                    "parameters": {"type": "object", "properties": {}, "required": []},
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "admin_table_schema",
+                    "description": "Get table schema (columns/types) (admin)",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"table": {"type": "string"}},
+                        "required": ["table"],
+                    },
+                },
+            },
             {
                 "type": "function",
                 "function": {
@@ -690,6 +734,53 @@ class AdminAgent(BaseAgent):
     def execute(self, tool_name: str, args: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         if not self.user.is_admin:
             return None
+        if tool_name == "admin_users_count":
+            from sqlalchemy import func
+            total = self.db.query(func.count(models.User.id)).scalar() or 0
+            return {"total": int(total)}
+        if tool_name == "admin_list_users":
+            lim = min(int(args.get("limit") or 50), 500)
+            off = int(args.get("offset") or 0)
+            rows = self.db.query(models.User).order_by(models.User.id).offset(off).limit(lim).all()
+            data = [
+                {
+                    "id": u.id,
+                    "name": u.name,
+                    "email": u.email,
+                    "is_admin": bool(u.is_admin),
+                    "created_at": u.created_at.isoformat() if u.created_at else None,
+                }
+                for u in rows
+            ]
+            return {"count": len(data), "users": data}
+        if tool_name == "admin_list_tables":
+            from sqlalchemy import inspect
+            insp = inspect(self.db.bind)
+            try:
+                tables = insp.get_table_names()
+            except Exception:
+                tables = []
+            return {"tables": tables}
+        if tool_name == "admin_table_schema":
+            from sqlalchemy import inspect
+            table = (args.get("table") or "").strip()
+            if not table:
+                return {"error": "Missing table"}
+            insp = inspect(self.db.bind)
+            try:
+                cols = insp.get_columns(table)
+                schema = [
+                    {
+                        "name": c.get("name"),
+                        "type": str(c.get("type")),
+                        "nullable": bool(c.get("nullable", True)),
+                        "primary_key": bool(c.get("primary_key", False)),
+                    }
+                    for c in cols
+                ]
+                return {"table": table, "columns": schema}
+            except Exception:
+                return {"error": f"Unknown table: {table}"}
         if tool_name == "admin_create_user":
             from ..auth import get_password_hash  # type: ignore
             name = args.get("name")

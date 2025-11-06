@@ -19,6 +19,15 @@ A modern, full-stack weight tracking application to help you monitor your health
 - ✅ RESTful API with auto-documentation
 - ✅ Modern, responsive UI
 
+### New: Multi‑Agent Chat (v2)
+- 🤖 In‑app chat with modular agents: planner, sql, analytics, action, admin, responder
+- 🔒 Strict grounding via function tools (no guessing). Tools map to safe server APIs
+- 📡 Live progress via async tasks + Server‑Sent Events (SSE)
+- 🧠 Intent gating avoids irrelevant tools (e.g., admin) for casual messages
+- ✅ Deterministic admin actions (grant/revoke) by name, with explicit fallback if tools missing
+- 📊 Analytics tools: average weight change over a custom range; current/longest streaks
+- 🧰 Frontend upgrades: clean rendering with minimal Markdown and structured metrics cards
+
 ### Coming Soon
 - 📊 Interactive charts and analytics (Phase 2)
 - 🎮 Achievement system and gamification (Phase 3)
@@ -72,6 +81,29 @@ npm run dev
 - Railway (Backend + Database)
 - Vercel (Frontend)
 - GitHub Actions (CI/CD)
+
+---
+
+## 🆕 Recent Enhancements
+
+- Chat v2 (multi‑agent, grounded by tools)
+  - Endpoints under `/api/chat/v2` with async task + SSE streaming
+  - Intent gating prevents off‑topic admin calls; small‑talk doesn’t force tools
+  - Deterministic name‑based admin updates (grant/revoke) when requested
+- Analytics
+  - `user_avg_weight_change`: average per‑day/week/month since a given date
+  - `user_streaks`: current and longest entry streaks with exact dates
+- Dashboard
+  - Active Goals now include a second progress bar based on time (days) alongside weight progress, each with clear labels
+- Targets
+  - Separate filter tabs for Failed vs Cancelled goals
+- Chat UI
+  - Textarea reliability and auto‑resize fixes; visible text in all themes
+  - Assistant replies render minimal Markdown (bold, lists, inline code)
+  - Metrics JSON blocks render as compact cards (averages, totals, date range)
+
+Tip: For metrics, the assistant includes a final fenced JSON block like:
+`{ "type": "metrics", "per_day": 0.12, "per_week": 0.84, "per_month": 3.65, "delta_kg": -5.1, "days": 42, "period": {"from": "YYYY-MM-DD", "to": "YYYY-MM-DD"} }`
 
 ---
 
@@ -156,6 +188,12 @@ VITE_API_URL=http://localhost:8000
 **Dashboard:**
 - `GET /api/users/dashboard` - Complete dashboard data
 - `GET /api/users/stats` - User statistics
+
+**Chat v2 (Multi‑Agent):**
+- `POST /api/chat/v2` — Synchronous chat (grounded, may call tools)
+- `POST /api/chat/v2/task` — Start async task (returns `task_id`)
+- `GET /api/chat/v2/tasks/{task_id}` — Poll task status and live events
+- `GET /api/chat/v2/stream/{task_id}?token=...` — SSE stream of agent events + final reply
 
 ---
 

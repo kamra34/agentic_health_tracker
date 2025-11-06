@@ -97,7 +97,9 @@ function Insights() {
   }, [history, forecast, metric, user]);
 
   // Training window overlay boundaries (based on full history)
-  const trainOverlay = useMemo(() => {\n    if (!history || history.length === 0 || trainWindow == null || trainWindow <= 0) return null;\n    const last = new Date(history[history.length - 1].date);\n    const cutoff = new Date(last);\n    cutoff.setDate(cutoff.getDate() - (trainWindow - 1));\n    return { x1: format(cutoff, 'yyyy-MM-dd'), x2: format(last, 'yyyy-MM-dd') };\n  }, [history, trainWindow]);
+  // Seasonality data (weekday/month) from backend
+  const weekdayData = useMemo(() => {
+    const labels = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
     const arr = seasonality?.weekday_avg || [];
     return labels.map((name, i) => ({ name, value: arr[i] ?? 0 }));
   }, [seasonality]);
@@ -117,6 +119,16 @@ function Insights() {
   const trendRange = rangeStr(summary?.trend_window_start, summary?.trend_window_end);
   const volRange = rangeStr(summary?.volatility_window_start, summary?.volatility_window_end);
   const adhRange = rangeStr(summary?.adherence_window_start, summary?.adherence_window_end);
+
+  // Training window overlay boundaries (based on full history)
+  const trainOverlay = useMemo(() => {
+    if (!history || history.length === 0 || trainWindow == null || trainWindow <= 0) return null;
+    const last = new Date(history[history.length - 1].date);
+    const cutoff = new Date(last);
+    cutoff.setDate(cutoff.getDate() - (trainWindow - 1));
+    return { x1: format(cutoff, 'yyyy-MM-dd'), x2: format(last, 'yyyy-MM-dd') };
+  }, [history, trainWindow]);
+
 
   return (
     <div>

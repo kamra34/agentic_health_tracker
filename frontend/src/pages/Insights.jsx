@@ -1,4 +1,13 @@
 import { useMemo, useState } from 'react';
+  // Diagnostics-scoped data
+  const { data: summaryDiag } = useQuery({
+    queryKey: ['insights','summary','diag', diagWindow],
+    queryFn: async () => (await insightsAPI.getSummary({ window_days: (diagWindow>0?diagWindow:undefined) })).data,
+  });
+  const { data: distributionsDiag } = useQuery({
+    queryKey: ['insights','distributions','diag', diagWindow],
+    queryFn: async () => (await insightsAPI.getDistributions(20, { window_days: (diagWindow>0?diagWindow:undefined) })).data,
+  });
 import { useQuery } from '@tanstack/react-query';
 import { userAPI, insightsAPI } from '../services/api';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area, BarChart, Bar, ReferenceArea } from 'recharts';
@@ -10,6 +19,8 @@ function Insights() {
   const [trainWindow, setTrainWindow] = useState(60); // days
   const [horizonDays, setHorizonDays] = useState(60); // days
   const [method, setMethod] = useState('holt'); // 'holt' | 'ses' | 'ols' | 'poly2'
+  // Diagnostics controls (independent window; default 3 months)
+  const [diagWindow, setDiagWindow] = useState(90);
 
   // Base data: history for past 6 months (from dashboard)
   const { data: dashboard } = useQuery({
@@ -273,41 +284,49 @@ function Insights() {
           </div>
         </div>
 
-        {/* Right column */}
-        <div className="space-y-6">
-          {/* Milestones */}
-          <div className="stat-card">
-            <p className="text-sm text-gray-600">Milestones</p>
-            <ul className="mt-2 text-sm text-gray-700">
-              <li>Lowest: {summary?.milestones?.min_weight != null ? `${summary.milestones.min_weight} kg (${summary.milestones.min_date})` : '--'}</li>
-              <li>Highest: {summary?.milestones?.max_weight != null ? `${summary.milestones.max_weight} kg (${summary.milestones.max_date})` : '--'}</li>
-              <li>Biggest 7â€‘day drop: {summary?.milestones?.biggest_7d_drop_kg != null ? `${summary.milestones.biggest_7d_drop_kg} kg` : '--'}</li>
-            </ul>
+          {/* Diagnostics */}
+          <div className="stat-card bg-gradient-to-br from-amber-50 to-orange-100 border-amber-200">
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-gray-700">Diagnostics</p>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-gray-600">Window</span>
+                <select value={diagWindow} onChange={(e)=>setDiagWindow(parseInt(e.target.value))} className="border rounded-md px-2 py-0.5 text-xs">
+                  <option value={14}>2w</option>
+                  <option value={30}>1m</option>
+                  <option value={90}>3m</option>
+                  <option value={180}>6m</option>
+                  <option value={0}>All</option>
+                </select>
+                <span title="Plateau checks last 5 days for near-flat changes; Regress-to-mean checks if large spikes are followed by opposite moves toward the average." className="ml-1 inline-flex items-center justify-center w-5 h-5 text-[10px] font-semibold rounded-full border border-gray-300 text-gray-600 bg-white cursor-help">i</span>
+              </div>
+            </div>
+            <div className="mt-2 grid grid-cols-2 gap-3 text-sm text-gray-800">
+              <div>
+                <div className="text-xs text-gray-600">Plateau</div>
+                <div className="font-semibold">{summaryDiag?.plateau_flag != null ? (summaryDiag.plateau_flag ? 'Possible' : 'No') : '--'}</div>
+              </div>
+              <div>
+                <div className="text-xs text-gray-600">Outliers (window)</div>
+                <div className="font-semibold">{(distributionsDiag?.window_outliers ?? distributionsDiag?.outliers_last_30d ?? 0)}</div>
+              </div>
+              <div className="col-span-2">
+                <div className="text-xs text-gray-600">Regress-to-Mean</div>
+                {summaryDiag?.rtm ? (
+                  <div>
+                    <div className="font-semibold">{Math.round(((summaryDiag.rtm.rate || 0) * 100))}% of extremes revert ({summaryDiag.rtm.reversions}/{summaryDiag.rtm.extremes})</div>
+                    <div className="text-xs text-gray-600">Window: {summaryDiag.rtm.window_start || '--'} – {summaryDiag.rtm.window_end || '--'}</div>
+                    {summaryDiag.rtm.example_dates && summaryDiag.rtm.example_dates.length > 0 ? (
+                      <div className="mt-1 text-xs text-gray-700">Examples: {summaryDiag.rtm.example_dates.join(', ')}</div>
+                    ) : (
+                      <div className="mt-1 text-xs text-gray-500">No examples in range</div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="font-semibold">Not enough data</div>
+                )}
+              </div>
+            </div>
           </div>
-		  <div className="stat-card bg-gradient-to-br from-amber-50 to-orange-100 border-amber-200">
-			<div className="flex items-center justify-between">
-			  <p className="text-sm text-gray-700">Diagnostics</p>
-			  <span title="Plateau checks last 5 days for near-flat changes; Regress-to-mean checks if large spikes are followed by opposite moves toward the average." className="ml-2 inline-flex items-center justify-center w-5 h-5 text-[10px] font-semibold rounded-full border border-gray-300 text-gray-600 bg-white cursor-help">i</span>
-			</div>
-			<div className="mt-2 grid grid-cols-2 gap-3 text-sm text-gray-800">
-			  <div>
-				<div className="text-xs text-gray-600">Plateau</div>
-				<div className="font-semibold">
-
-</div>
-			  </div>
-			  <div>
-				<div className="text-xs text-gray-600">Outliers (window)</div>
-				<div className="font-semibold">
-
-</div>
-			  </div>
-			  <div className="col-span-2">
-				<div className="text-xs text-gray-600">Regress-to-Mean (trend window)</div>
-				{summary?.rtm ? (
-				  <div>
-					<div className="font-semibold">{Math.round(((summary.rtm.rate || 0) * 100))}% of extremes revert ({summary.rtm.reversions}/{summary.rtm.extremes})</div>
-					<div className="text-xs text-gray-600">Window: {summary.rtm.window_start} – {summary.rtm.window_end}</div>
 					{summary.rtm.example_dates && summary.rtm.example_dates.length > 0 && (
 					  <div className="mt-1 text-xs text-gray-700">Examples: {summary.rtm.example_dates.join(
 )}</div>

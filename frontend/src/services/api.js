@@ -99,7 +99,7 @@ export const insightsAPI = {
   getForecast: ({ metric = 'weight', horizon = 60, method = 'holt', train_window_days = 60, alpha, beta } = {}) =>
     api.get('/api/insights/forecast', { params: { metric, horizon, method, train_window_days, alpha, beta } }),
   getComposition: () => api.get('/api/insights/composition'),
-  getDistributions: (bins = 20) => api.get('/api/insights/distributions', { params: { bins } }),
+  getDistributions: (bins = 20, params = {}) => api.get('/api/insights/distributions', { params: { bins, ...params } }),
   getSeasonality: () => api.get('/api/insights/seasonality'),
   getGoalAnalytics: () => api.get('/api/insights/goal-analytics'),
   getCalendar: (days = 365) => api.get('/api/insights/calendar', { params: { days } }),

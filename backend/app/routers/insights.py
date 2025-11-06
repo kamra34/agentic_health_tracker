@@ -668,11 +668,14 @@ class DistributionsResponse(BaseModel):
     daily_change_hist: List[HistogramBin]
     outliers_last_30d: int
     recent_std: float
+    window_outliers: Optional[int] = None
+    window_std: Optional[float] = None
 
 
 @router.get("/distributions", response_model=DistributionsResponse)
 def get_distributions(
     bins: int = Query(20, ge=5, le=100),
+    window_days: Optional[int] = Query(None, ge=7, le=2000),
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -714,7 +717,24 @@ def get_distributions(
     mu = mean(recent) if recent else 0.0
     sd = pstdev(recent) if len(recent) >= 2 else 0.0
     outliers = sum(1 for v in recent if sd > 0 and abs(v - mu) > 3 * sd)
-    resp = DistributionsResponse(daily_change_hist=hist, outliers_last_30d=outliers, recent_std=round(sd, 4))
+    # Window-scoped outliers if requested
+    win_out = None
+    win_std = None
+    if window_days:
+        wcut = date.today() - timedelta(days=window_days - 1)
+        win_vals = [v for v, d in zip(deltas, dates) if d >= wcut]
+        if len(win_vals) >= 2:
+            wmu = mean(win_vals)
+            wsd = pstdev(win_vals)
+            win_std = round(wsd, 4)
+            win_out = sum(1 for v in win_vals if wsd > 0 and abs(v - wmu) > 3 * wsd)
+    resp = DistributionsResponse(
+        daily_change_hist=hist,
+        outliers_last_30d=outliers,
+        recent_std=round(sd, 4),
+        window_outliers=win_out,
+        window_std=win_std,
+    )
     _cache_set("distributions", current_user.id, resp)
     return resp
 

@@ -18,38 +18,16 @@ jobs:
           node-version: '18'
       - name: Install Railway CLI
         run: npm i -g @railway/cli
-      - name: Railway login (browserless)
+      - name: Set Railway token
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
         run: |
           if [ -z "$RAILWAY_TOKEN" ]; then echo "RAILWAY_TOKEN not set" && exit 1; fi
-          echo "$RAILWAY_TOKEN" | railway login --browserless
-      - name: Link project (optional)
-        env:
-          RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROJECT_ID }}
-        run: |
-          if [ -n "$RAILWAY_PROJECT_ID" ]; then
-            railway link --project "$RAILWAY_PROJECT_ID"
-          else
-            echo "RAILWAY_PROJECT_ID not set, skipping project link"
-          fi
-      - name: Select environment (optional)
-        env:
-          RAILWAY_ENVIRONMENT: ${{ secrets.RAILWAY_ENVIRONMENT }}
-        run: |
-          if [ -n "$RAILWAY_ENVIRONMENT" ]; then
-            railway environment "$RAILWAY_ENVIRONMENT"
-          else
-            echo "RAILWAY_ENVIRONMENT not set, skipping environment selection"
-          fi
+          echo "Railway token is set and will be used for authentication"
       - name: Deploy backend service to Railway
         working-directory: backend
         env:
-          RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROJECT_ID }}
-          RAILWAY_SERVICE: ${{ secrets.RAILWAY_SERVICE }}
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
         run: |
-          ARGS="--ci"
-          if [ -n "$RAILWAY_PROJECT_ID" ]; then ARGS="$ARGS --project $RAILWAY_PROJECT_ID"; fi
-          if [ -n "$RAILWAY_SERVICE" ]; then ARGS="$ARGS --service $RAILWAY_SERVICE"; fi
-          # Trigger deploy
-          railway up $ARGS
+          # Railway CLI uses RAILWAY_TOKEN env var automatically
+          railway up --service backend

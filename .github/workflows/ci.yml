@@ -25,13 +25,13 @@ jobs:
           if [ -z "$RAILWAY_TOKEN" ]; then echo "RAILWAY_TOKEN not set" && exit 1; fi
           echo "$RAILWAY_TOKEN" | railway login --browserless
       - name: Link project (optional)
-        if: ${{ secrets.RAILWAY_PROJECT_ID != '' }}
+        if: secrets.RAILWAY_PROJECT_ID != ''
         env:
           RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROJECT_ID }}
         run: |
           railway link --project "$RAILWAY_PROJECT_ID"
       - name: Select environment (optional)
-        if: ${{ secrets.RAILWAY_ENVIRONMENT != '' }}
+        if: secrets.RAILWAY_ENVIRONMENT != ''
         env:
           RAILWAY_ENVIRONMENT: ${{ secrets.RAILWAY_ENVIRONMENT }}
         run: |

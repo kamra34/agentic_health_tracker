@@ -257,7 +257,7 @@ def _build_policy_summary() -> str:
     """Static summary of access control to help the assistant answer policy questions."""
     return (
         "Access Policy:\n"
-        "- Non-admin users: may access only their own profile, weights, and targets via /api/users, /api/weights, /api/targets; they can update their own profile and change their own password.\n"
+        "- Non-admin users: may access only their own profile, weights, and targets via /api/users, /api/weights, /api/targets; they can create, update, and delete their own weights and targets; they can update their own profile and change their own password.\n"
         "- Admin users: access admin-only routes under /api/admin to list users, view user details, view user targets, create users, update users, set user passwords, delete users, and delete targets.\n"
         "- Creating a user (admin): POST /api/admin/users with body: {name (required), password (required), email?, sex?, height?, activity_level?, date_of_birth?} and optional query param is_admin.\n"
         "- Updating a user (admin): PUT /api/admin/users/{user_id} with any subset of name, email, sex, height, activity_level, date_of_birth.\n"
@@ -310,10 +310,135 @@ def chat(
     for m in history:
         messages.append({"role": m.role, "content": m.content})
 
-    # Tooling: expose admin actions only to admins
-    tools: List[Dict[str, Any]] = []
+    # Tooling: expose user-scoped CRUD tools to all users; admin tools to admins only
+    tools: List[Dict[str, Any]] = [
+        # User weight tools
+        {
+            "type": "function",
+            "function": {
+                "name": "user_create_weight",
+                "description": "Create a weight entry for the current user.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "date_of_measurement": {"type": "string", "description": "YYYY-MM-DD"},
+                        "weight": {"type": "number"},
+                        "body_fat_percentage": {"type": ["number", "null"]},
+                        "muscle_mass": {"type": ["number", "null"]},
+                        "notes": {"type": ["string", "null"]},
+                    },
+                    "required": ["date_of_measurement", "weight"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "user_update_latest_weight",
+                "description": "Update the most recent weight entry for the current user.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "weight": {"type": "number"},
+                    },
+                    "required": ["weight"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "user_update_weight_by_date",
+                "description": "Update the weight value for a specific date (YYYY-MM-DD) for the current user.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "date_of_measurement": {"type": "string", "description": "YYYY-MM-DD"},
+                        "weight": {"type": "number"},
+                    },
+                    "required": ["date_of_measurement", "weight"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "user_update_weight",
+                "description": "Update a weight entry by id for the current user.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "weight_id": {"type": "integer"},
+                        "date_of_measurement": {"type": ["string", "null"], "description": "YYYY-MM-DD"},
+                        "weight": {"type": ["number", "null"]},
+                        "body_fat_percentage": {"type": ["number", "null"]},
+                        "muscle_mass": {"type": ["number", "null"]},
+                        "notes": {"type": ["string", "null"]},
+                    },
+                    "required": ["weight_id"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "user_delete_weight",
+                "description": "Delete a weight entry by id for the current user.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"weight_id": {"type": "integer"}},
+                    "required": ["weight_id"],
+                },
+            },
+        },
+        # User target tools
+        {
+            "type": "function",
+            "function": {
+                "name": "user_create_target",
+                "description": "Create a target for the current user.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "date_of_target": {"type": "string", "description": "YYYY-MM-DD"},
+                        "target_weight": {"type": "number"},
+                    },
+                    "required": ["date_of_target", "target_weight"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "user_update_target",
+                "description": "Update a target by id for the current user.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "target_id": {"type": "integer"},
+                        "date_of_target": {"type": ["string", "null"], "description": "YYYY-MM-DD"},
+                        "target_weight": {"type": ["number", "null"]},
+                        "status": {"type": ["string", "null"], "enum": ["active", "completed", "cancelled"]},
+                    },
+                    "required": ["target_id"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "user_delete_target",
+                "description": "Delete a target by id for the current user.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"target_id": {"type": "integer"}},
+                    "required": ["target_id"],
+                },
+            },
+        },
+    ]
     if current_user.is_admin:
-        tools = [
+        tools += [
             {
                 "type": "function",
                 "function": {
@@ -408,6 +533,151 @@ def chat(
 
     def _exec_tool(name: str, args: Dict[str, Any]) -> str:
         try:
+            # ---------- User tools ----------
+            if name == "user_create_weight":
+                from datetime import date as _date
+                dom = args.get("date_of_measurement")
+                w = args.get("weight")
+                if not dom or w is None:
+                    return _tool_result(name, {"error": "Missing required: date_of_measurement, weight"}, ok=False)
+                try:
+                    dom_d = _date.fromisoformat(str(dom))
+                except Exception:
+                    return _tool_result(name, {"error": "Invalid date_of_measurement format (use YYYY-MM-DD)"}, ok=False)
+                # Check duplicate
+                existing = db.query(models.Weight).filter(models.Weight.user_id == current_user.id, models.Weight.date_of_measurement == dom_d).first()
+                if existing:
+                    return _tool_result(name, {"error": f"Weight entry already exists for {dom}"}, ok=False)
+                obj = models.Weight(
+                    user_id=current_user.id,
+                    date_of_measurement=dom_d,
+                    weight=w,
+                    body_fat_percentage=args.get("body_fat_percentage"),
+                    muscle_mass=args.get("muscle_mass"),
+                    notes=args.get("notes"),
+                )
+                db.add(obj)
+                db.commit()
+                db.refresh(obj)
+                return _tool_result(name, {"id": obj.id, "date": obj.date_of_measurement.isoformat(), "weight": float(obj.weight)})
+
+            if name == "user_update_weight":
+                from datetime import date as _date
+                wid = int(args.get("weight_id"))
+                obj = db.query(models.Weight).filter(models.Weight.id == wid, models.Weight.user_id == current_user.id).first()
+                if not obj:
+                    return _tool_result(name, {"error": "Weight entry not found"}, ok=False)
+                if args.get("date_of_measurement") is not None:
+                    try:
+                        dom_d = _date.fromisoformat(str(args.get("date_of_measurement")))
+                    except Exception:
+                        return _tool_result(name, {"error": "Invalid date_of_measurement format (use YYYY-MM-DD)"}, ok=False)
+                    # check duplicate
+                    dup = db.query(models.Weight).filter(models.Weight.user_id == current_user.id, models.Weight.date_of_measurement == dom_d, models.Weight.id != wid).first()
+                    if dup:
+                        return _tool_result(name, {"error": f"Weight entry already exists for {dom_d}"}, ok=False)
+                    obj.date_of_measurement = dom_d
+                for fld in ["weight", "body_fat_percentage", "muscle_mass", "notes"]:
+                    if fld in args and args[fld] is not None:
+                        setattr(obj, fld, args[fld])
+                db.commit()
+                db.refresh(obj)
+                return _tool_result(name, {"id": obj.id, "date": obj.date_of_measurement.isoformat(), "weight": float(obj.weight)})
+
+            if name == "user_delete_weight":
+                wid = int(args.get("weight_id"))
+                obj = db.query(models.Weight).filter(models.Weight.id == wid, models.Weight.user_id == current_user.id).first()
+                if not obj:
+                    return _tool_result(name, {"error": "Weight entry not found"}, ok=False)
+                db.delete(obj)
+                db.commit()
+                return _tool_result(name, {"message": "Weight entry deleted"})
+
+            if name == "user_update_latest_weight":
+                from sqlalchemy import desc as _desc
+                new_w = args.get("weight")
+                if new_w is None:
+                    return _tool_result(name, {"error": "Missing required: weight"}, ok=False)
+                obj = db.query(models.Weight).filter(models.Weight.user_id == current_user.id).order_by(_desc(models.Weight.date_of_measurement)).first()
+                if not obj:
+                    return _tool_result(name, {"error": "No weight entries found to update. Consider creating one first."}, ok=False)
+                obj.weight = new_w
+                db.commit()
+                db.refresh(obj)
+                return _tool_result(name, {"id": obj.id, "date": obj.date_of_measurement.isoformat(), "weight": float(obj.weight)})
+
+            if name == "user_update_weight_by_date":
+                from datetime import date as _date
+                dom = args.get("date_of_measurement")
+                new_w = args.get("weight")
+                if not dom or new_w is None:
+                    return _tool_result(name, {"error": "Missing required: date_of_measurement, weight"}, ok=False)
+                try:
+                    dom_d = _date.fromisoformat(str(dom))
+                except Exception:
+                    return _tool_result(name, {"error": "Invalid date_of_measurement format (use YYYY-MM-DD)"}, ok=False)
+                obj = db.query(models.Weight).filter(models.Weight.user_id == current_user.id, models.Weight.date_of_measurement == dom_d).first()
+                if not obj:
+                    return _tool_result(name, {"error": f"No weight entry found for {dom}"}, ok=False)
+                obj.weight = new_w
+                db.commit()
+                db.refresh(obj)
+                return _tool_result(name, {"id": obj.id, "date": obj.date_of_measurement.isoformat(), "weight": float(obj.weight)})
+
+            if name == "user_create_target":
+                from datetime import date as _date
+                dot = args.get("date_of_target")
+                tw = args.get("target_weight")
+                if not dot or tw is None:
+                    return _tool_result(name, {"error": "Missing required: date_of_target, target_weight"}, ok=False)
+                try:
+                    dot_d = _date.fromisoformat(str(dot))
+                except Exception:
+                    return _tool_result(name, {"error": "Invalid date_of_target format (use YYYY-MM-DD)"}, ok=False)
+                obj = models.TargetWeight(
+                    user_id=current_user.id,
+                    date_of_target=dot_d,
+                    target_weight=tw,
+                    status="active",
+                )
+                db.add(obj)
+                db.commit()
+                db.refresh(obj)
+                return _tool_result(name, {"id": obj.id, "date_of_target": obj.date_of_target.isoformat(), "target_weight": float(obj.target_weight), "status": obj.status})
+
+            if name == "user_update_target":
+                from datetime import date as _date
+                tid = int(args.get("target_id"))
+                obj = db.query(models.TargetWeight).filter(models.TargetWeight.id == tid, models.TargetWeight.user_id == current_user.id).first()
+                if not obj:
+                    return _tool_result(name, {"error": "Target not found"}, ok=False)
+                if args.get("date_of_target") is not None:
+                    try:
+                        dot_d = _date.fromisoformat(str(args.get("date_of_target")))
+                    except Exception:
+                        return _tool_result(name, {"error": "Invalid date_of_target format (use YYYY-MM-DD)"}, ok=False)
+                    obj.date_of_target = dot_d
+                if args.get("target_weight") is not None:
+                    obj.target_weight = args.get("target_weight")
+                if args.get("status") is not None:
+                    status_val = str(args.get("status"))
+                    if status_val not in ["active", "completed", "cancelled"]:
+                        return _tool_result(name, {"error": "Status must be one of: active, completed, cancelled"}, ok=False)
+                    obj.status = status_val
+                db.commit()
+                db.refresh(obj)
+                return _tool_result(name, {"id": obj.id, "date_of_target": obj.date_of_target.isoformat(), "target_weight": float(obj.target_weight), "status": obj.status})
+
+            if name == "user_delete_target":
+                tid = int(args.get("target_id"))
+                obj = db.query(models.TargetWeight).filter(models.TargetWeight.id == tid, models.TargetWeight.user_id == current_user.id).first()
+                if not obj:
+                    return _tool_result(name, {"error": "Target not found"}, ok=False)
+                db.delete(obj)
+                db.commit()
+                return _tool_result(name, {"message": "Target deleted"})
+
+            # ---------- Admin tools ----------
             if name == "admin_create_user":
                 required = ["name", "password"]
                 for r in required:

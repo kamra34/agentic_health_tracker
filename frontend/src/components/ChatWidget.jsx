@@ -1,13 +1,33 @@
 import { useState, useRef, useEffect } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { chatAPI } from '../services/api';
 import { MessageCircle, X, Send, Bot } from 'lucide-react';
+import useAuthStore from '../stores/authStore';
 
 function ChatWidget() {
+  const user = useAuthStore((s) => s.user);
+  const storageKey = `chat:${user?.id || 'anon'}`;
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState([]); // {role:'user'|'assistant', content:string}
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const endRef = useRef(null);
+  const queryClient = useQueryClient();
+
+  // Rehydrate state from localStorage on mount or when user changes
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(storageKey);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed?.messages)) setMessages(parsed.messages);
+        if (typeof parsed?.open === 'boolean') setOpen(parsed.open);
+      }
+    } catch (_) {
+      // ignore
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storageKey]);
 
   useEffect(() => {
     if (open && messages.length === 0) {
@@ -18,6 +38,16 @@ function ChatWidget() {
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, open]);
+
+  // Persist state to localStorage whenever it changes
+  useEffect(() => {
+    try {
+      const toSave = JSON.stringify({ open, messages });
+      localStorage.setItem(storageKey, toSave);
+    } catch (_) {
+      // ignore
+    }
+  }, [open, messages, storageKey]);
 
   const send = async () => {
     const text = input.trim();
@@ -31,6 +61,11 @@ function ChatWidget() {
       const res = await chatAPI.send(history);
       const reply = res.data?.reply ?? 'Sorry, I could not generate a reply.';
       setMessages((m) => [...m, { role: 'assistant', content: reply }]);
+      // After assistant reply, proactively refresh key queries so UI reflects any server-side changes
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      queryClient.invalidateQueries({ queryKey: ['weights'] });
+      queryClient.invalidateQueries({ queryKey: ['targets'] });
+      queryClient.invalidateQueries({ queryKey: ['insights'] });
     } catch (e) {
       setMessages((m) => [...m, { role: 'assistant', content: 'Sorry, chat is unavailable right now.' }]);
     } finally {
@@ -98,4 +133,3 @@ function ChatWidget() {
 }
 
 export default ChatWidget;
-

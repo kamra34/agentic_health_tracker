@@ -525,7 +525,7 @@ function GoalAnalyticsSection({ goalAnalytics, dashboard }) {
             <tr className="text-gray-600">
               <th className="text-left pr-4">Goal</th>
               <th className="text-right pr-4">Required</th>
-              <th className="text-right pr-4">Recent</th>
+              <th className="text-right pr-4">Recent (last 8 wks OLS)</th>
               <th className="text-right pr-4">Fit</th>
               <th className="text-right">ETA</th>
             </tr>
@@ -596,12 +596,14 @@ function WhatIfSection({ dashboard }) {
   const nearest = targets
     .slice()
     .sort((a,b) => new Date(a.date_of_target) - new Date(b.date_of_target))[0];
-  const requiredWeekly = (() => {
+  const requiredWeekly = useMemo(() => {
     if (!nearest || currentWeight == null) return null;
     const targetWeight = parseFloat(nearest.target_weight);
-    const daysRemaining = Math.max(1, (new Date(nearest.date_of_target) - new Date()) / (1000*3600*24));
-    return (targetWeight - currentWeight) / (daysRemaining / 7);
-  })();
+    const created = new Date(nearest.created_date);
+    const startW = nearest.starting_weight != null ? parseFloat(nearest.starting_weight) : currentWeight;
+    const totalDays = Math.max(1, (new Date(nearest.date_of_target) - created) / (1000*3600*24));
+    return (targetWeight - startW) / (totalDays / 7);
+  }, [nearest, currentWeight]);
   const [weekly, setWeekly] = useState(requiredWeekly ?? -0.5); // kg/week
 
   let finishText = '--';

@@ -866,9 +866,26 @@ def get_goal_analytics(
     rows: List[GoalRow] = []
     for t in active_targets:
         target_w = float(t.target_weight)
-        days_remaining = max(1, (t.date_of_target - date.today()).days)
-        weeks_remaining = days_remaining / 7.0
-        required = (target_w - current_weight) / weeks_remaining
+        # Required slope based on goal lifetime: from creation/start to target date
+        start_date = getattr(t, 'created_date', None) or dates[0]
+        # Find starting weight at/near start_date using series
+        start_w = None
+        # exact or last before
+        for d, v in reversed(series):
+            if d <= start_date:
+                start_w = float(v)
+                break
+        if start_w is None:
+            # fallback to first after
+            for d, v in series:
+                if d >= start_date:
+                    start_w = float(v)
+                    break
+        if start_w is None:
+            start_w = current_weight
+        total_days = max(1, (t.date_of_target - start_date).days)
+        weeks_total = total_days / 7.0
+        required = (target_w - start_w) / weeks_total
         same_sign = (required == 0) or ((required > 0) == (recent_slope_week > 0))
         ratio = 0.0 if required == 0 else min(1.0, abs(recent_slope_week) / (abs(required) + 1e-6))
         base_score = 0.6 if same_sign else 0.2

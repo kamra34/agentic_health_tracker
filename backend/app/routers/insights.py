@@ -693,16 +693,18 @@ class DistributionsResponse(BaseModel):
     recent_std: float
     window_outliers: Optional[int] = None
     window_std: Optional[float] = None
+    unit_label: str = "kg/day"
 
 
 @router.get("/distributions", response_model=DistributionsResponse)
 def get_distributions(
     bins: int = Query(20, ge=5, le=100),
-    window_days: Optional[int] = Query(None, ge=7, le=2000),
+    window_days: Optional[int] = Query(None, ge=7, le=3650),
+    agg: str = Query("daily", pattern="^(daily|weekly|monthly)$"),
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    cache_key = f"bins:{bins}:wd:{window_days or 0}"
+    cache_key = f"bins:{bins}:wd:{window_days or 0}:agg:{agg}"
     cached = _param_cache_get("distributions", current_user.id, cache_key)
     if cached and len(cached.daily_change_hist) == bins:
         return cached
@@ -713,40 +715,69 @@ def get_distributions(
         .all()
     )
     series = _to_series(weights)
-    # Build per-day normalized deltas
-    deltas: List[float] = []
-    dates: List[date] = []
-    for (d1, v1), (d2, v2) in zip(series[:-1], series[1:]):
-        gap = (d2 - d1).days
-        if gap > 0:
-            deltas.append((v2 - v1) / gap)
-            dates.append(d2)
-    if not deltas:
-        return DistributionsResponse(daily_change_hist=[], outliers_last_30d=0, recent_std=0.0)
-    mn, mx = min(deltas), max(deltas)
+    # Optionally filter by window
+    if window_days:
+        cutoff = date.today() - timedelta(days=window_days - 1)
+        series = [(d, v) for (d, v) in series if d >= cutoff]
+    # Build changes according to aggregation
+    changes: List[float] = []
+    change_dates: List[date] = []
+    if agg == "daily":
+        for (d1, v1), (d2, v2) in zip(series[:-1], series[1:]):
+            gap = (d2 - d1).days
+            if gap > 0:
+                changes.append((v2 - v1) / gap)
+                change_dates.append(d2)
+        unit_label = "kg/day"
+    else:
+        # assign total change (not per-day) to the bucket of d2 (week/month)
+        buckets: Dict[str, float] = {}
+        for (d1, v1), (d2, v2) in zip(series[:-1], series[1:]):
+            if d2 <= d1:
+                continue
+            delta = float(v2 - v1)
+            if agg == "weekly":
+                iso = d2.isocalendar()
+                key = f"{iso.year}-W{iso.week:02d}"
+                unit_label = "kg/week"
+            else:
+                key = f"{d2.year}-{d2.month:02d}"
+                unit_label = "kg/month"
+            buckets[key] = buckets.get(key, 0.0) + delta
+        # Emit in chronological order
+        for k in sorted(buckets.keys()):
+            changes.append(buckets[k])
+        # For dates, approximate with last date of bucket (not used for hist)
+        change_dates = []
+    if not changes:
+        return DistributionsResponse(daily_change_hist=[], outliers_last_30d=0, recent_std=0.0, unit_label=unit_label if 'unit_label' in locals() else 'kg/day')
+    mn, mx = min(changes), max(changes)
     if mn == mx:
         hist = [HistogramBin(bin_start=mn, bin_end=mn, count=len(deltas))]
     else:
         width = (mx - mn) / bins
         counts = [0] * bins
-        for v in deltas:
+        for v in changes:
             idx = int((v - mn) / width)
             if idx >= bins:
                 idx = bins - 1
             counts[idx] += 1
         hist = [HistogramBin(bin_start=mn + i * width, bin_end=mn + (i + 1) * width, count=c) for i, c in enumerate(counts)]
-    # Recent outliers (last 30 days, > 3 sigma)
-    cutoff = date.today() - timedelta(days=30)
-    recent = [v for v, d in zip(deltas, dates) if d >= cutoff]
+    # Recent outliers (last 30 days, > 3 sigma) — only meaningful for daily
+    if agg == "daily":
+        cutoff30 = date.today() - timedelta(days=30)
+        recent = [v for v, d in zip(changes, change_dates) if d >= cutoff30]
+    else:
+        recent = changes[-min(10, len(changes)):]  # last few buckets
     mu = mean(recent) if recent else 0.0
     sd = pstdev(recent) if len(recent) >= 2 else 0.0
     outliers = sum(1 for v in recent if sd > 0 and abs(v - mu) > 3 * sd)
     # Window-scoped outliers if requested
     win_out = None
     win_std = None
-    if window_days:
+    if window_days and agg == "daily":
         wcut = date.today() - timedelta(days=window_days - 1)
-        win_vals = [v for v, d in zip(deltas, dates) if d >= wcut]
+        win_vals = [v for v, d in zip(changes, change_dates) if d >= wcut]
         if len(win_vals) >= 2:
             wmu = mean(win_vals)
             wsd = pstdev(win_vals)
@@ -758,6 +789,7 @@ def get_distributions(
         recent_std=round(sd, 4),
         window_outliers=win_out,
         window_std=win_std,
+        unit_label=unit_label,
     )
     _param_cache_set("distributions", current_user.id, cache_key, resp)
     return resp

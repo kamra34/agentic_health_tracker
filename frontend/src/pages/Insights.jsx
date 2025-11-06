@@ -52,10 +52,6 @@ function Insights() {
     queryKey: ['insights','seasonality', seasonWindow],
     queryFn: async () => (await insightsAPI.getSeasonality({ window_days: (seasonWindow>0?seasonWindow:undefined) })).data,
   });
-  const { data: distributions } = useQuery({
-    queryKey: ['insights','distributions'],
-    queryFn: async () => (await insightsAPI.getDistributions(20)).data,
-  });
   const { data: composition } = useQuery({
     queryKey: ['insights','composition'],
     queryFn: async () => (await insightsAPI.getComposition()).data,
@@ -147,6 +143,12 @@ function Insights() {
     const loss = seasonality?.month_loss_pct || [];
     return months.map((name, i) => ({ name, value: arr[i] ?? 0, n: n[i] ?? 0, loss: loss[i] ?? 0 }));
   }, [seasonality]);
+  const [distAgg, setDistAgg] = useState('daily'); // daily|weekly|monthly
+  const [distWindow, setDistWindow] = useState(0); // 0=All
+  const { data: distributions } = useQuery({
+    queryKey: ['insights','distributions', distAgg, distWindow],
+    queryFn: async () => (await insightsAPI.getDistributions(20, { agg: distAgg, window_days: (distWindow>0?distWindow:undefined) })).data,
+  });
   const histData = useMemo(() => {
     const bins = distributions?.daily_change_hist || [];
     return bins.map(b => ({ bin: `${b.bin_start.toFixed(2)}`, count: b.count }));
@@ -335,14 +337,35 @@ function Insights() {
 
           {/* Distributions */}
           <div className="card">
-            <h2 className="text-lg font-semibold text-gray-800 mb-2">Distribution of Daily Changes</h2>
-            <div style={{ width: '100%', height: 240 }}>
+            <div className="flex items-start justify-between mb-2">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-800">Distribution of Changes</h2>
+                <p className="text-sm text-gray-600">Histogram of {distAgg} changes{distWindow>0?` • last ${distWindow}d`:''}</p>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-sm text-gray-600">Aggregation</span>
+                <select value={distAgg} onChange={(e)=>setDistAgg(e.target.value)} className="border rounded-md px-2 py-1 text-sm">
+                  <option value="daily">Daily</option>
+                  <option value="weekly">Weekly</option>
+                  <option value="monthly">Monthly</option>
+                </select>
+                <span className="text-sm text-gray-600">Window</span>
+                <select value={distWindow} onChange={(e)=>setDistWindow(parseInt(e.target.value))} className="border rounded-md px-2 py-1 text-sm">
+                  <option value={30}>1m</option>
+                  <option value={90}>3m</option>
+                  <option value={180}>6m</option>
+                  <option value={365}>1y</option>
+                  <option value={0}>All</option>
+                </select>
+              </div>
+            </div>
+            <div style={{ width: '100%', height: 260 }}>
               <ResponsiveContainer>
                 <BarChart data={histData}>
                   <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="bin" />
+                  <XAxis dataKey="bin" label={{ value: distributions?.unit_label || '', position: 'insideBottom', offset: -2 }} />
                   <YAxis />
-                  <Tooltip />
+                  <Tooltip formatter={(v,n,p)=>v} labelFormatter={(l)=>`${l} ${distributions?.unit_label||''}`} />
                   <Bar dataKey="count" fill="#a78bfa" />
                 </BarChart>
               </ResponsiveContainer>

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { userAPI, insightsAPI } from '../services/api';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area, BarChart, Bar, ReferenceArea, ReferenceLine } from 'recharts';
+import { userAPI, insightsAPI, targetAPI } from '../services/api';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area, BarChart, Bar, ReferenceArea, ReferenceLine, PieChart, Pie, Cell, Legend } from 'recharts';
 import { format, differenceInCalendarDays, addDays } from 'date-fns';
 
 function Insights() {
@@ -57,6 +57,11 @@ function Insights() {
   const { data: goalAnalytics } = useQuery({
     queryKey: ['insights','goal-analytics'],
     queryFn: async () => (await insightsAPI.getGoalAnalytics()).data,
+  });
+  // All targets history (for visuals)
+  const { data: allTargets } = useQuery({
+    queryKey: ['targets','all'],
+    queryFn: async () => (await targetAPI.list()).data,
   });
   const { data: calendar } = useQuery({
     queryKey: ['insights','calendar'],
@@ -166,6 +171,9 @@ function Insights() {
           <WhatIfSection dashboard={dashboard} />
         </div>
       </div>
+
+      {/* Targets History & Stats */}
+      <TargetsHistorySection targets={allTargets} />
 
       {/* Main layout: left (trends) and right (diagnostics) */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -854,3 +862,112 @@ function AdherenceCard({ summary, dashboard }) {
 
 
 
+function TargetsHistorySection({ targets }) {
+  const t = targets || [];
+  if (!t.length) return null;
+
+  const statusCounts = t.reduce((acc, x) => {
+    const s = (x.status || 'unknown').toLowerCase();
+    acc[s] = (acc[s] || 0) + 1;
+    return acc;
+  }, {});
+  const total = t.length;
+  const completed = statusCounts['completed'] || 0;
+  const cancelled = (statusCounts['cancelled'] || statusCounts['failed']) || 0;
+  const active = statusCounts['active'] || 0;
+  const successRate = total ? Math.round((completed / total) * 100) : 0;
+
+  const COLORS = ['#10b981', '#f59e0b', '#ef4444', '#60a5fa'];
+  const pieData = [
+    { name: 'Active', value: active },
+    { name: 'Completed', value: completed },
+    { name: 'Cancelled', value: cancelled },
+  ].filter(d => d.value > 0);
+
+  // Required pace per target (kg/week) based on created_date -> date_of_target
+  const paceRows = t.map(x => {
+    const startW = x.starting_weight != null ? parseFloat(x.starting_weight) : (x.current_weight != null ? parseFloat(x.current_weight) : null);
+    const targetW = x.target_weight != null ? parseFloat(x.target_weight) : null;
+    const created = x.created_date ? new Date(x.created_date) : null;
+    const due = x.date_of_target ? new Date(x.date_of_target) : null;
+    let req = null;
+    if (startW != null && targetW != null && created && due) {
+      const totalDays = Math.max(1, (due - created) / (1000*3600*24));
+      req = (targetW - startW) / (totalDays / 7);
+    }
+    let ach = null;
+    if (req != null && x.final_weight != null) {
+      ach = (parseFloat(x.final_weight) - startW) / ((Math.max(1, (due - created) / (1000*3600*24))) / 7);
+    }
+    return { id: x.id, label: `${targetW?.toFixed?.(1) ?? '--'} kg by ${x.date_of_target}`, status: x.status, req, ach };
+  }).filter(r => r.req != null);
+
+  const avgReq = paceRows.length ? (paceRows.reduce((a,b)=>a+(b.req||0),0)/paceRows.length) : 0;
+  const avgAch = paceRows.filter(r=>r.ach!=null).length ? (paceRows.filter(r=>r.ach!=null).reduce((a,b)=>a+(b.ach||0),0)/paceRows.filter(r=>r.ach!=null).length) : null;
+
+  // Pace histogram bins
+  const bins = (() => {
+    const values = paceRows.map(r=>r.req);
+    if (!values.length) return [];
+    const mn = Math.min(...values), mx = Math.max(...values);
+    const nb = Math.min(10, Math.max(5, values.length));
+    const width = (mx - mn) || 1;
+    const step = width / nb;
+    const counts = Array.from({length: nb},()=>0);
+    for (const v of values) {
+      let idx = Math.floor((v - mn) / (step||1));
+      if (idx >= nb) idx = nb-1;
+      if (idx < 0) idx = 0;
+      counts[idx]++;
+    }
+    return counts.map((c,i)=>({ bin: (mn + i*step).toFixed(2), count: c }));
+  })();
+
+  return (
+    <div className="card">
+      <h2 className="text-lg font-semibold text-gray-800 mb-2">Targets History & Stats</h2>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <KpiCard label="Total Targets" value={total} />
+            <KpiCard label="Success Rate" value={`${successRate}%`} />
+          </div>
+          <div className="w-full" style={{height:220}}>
+            <ResponsiveContainer>
+              <PieChart>
+                <Pie data={pieData} dataKey="value" nameKey="name" innerRadius={40} outerRadius={70} paddingAngle={2}>
+                  {pieData.map((entry, index) => (
+                    <Cell key={`slice-${index}`} fill={COLORS[index % COLORS.length]} />
+                  ))}
+                </Pie>
+                <Legend verticalAlign="bottom" height={36} />
+                <Tooltip />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        <div className="lg:col-span-2 space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <KpiCard label="Avg Required Pace" value={`${avgReq.toFixed(2)} kg/wk`} />
+            <KpiCard label="Avg Achieved Pace" value={avgAch != null ? `${avgAch.toFixed(2)} kg/wk` : '--'} />
+          </div>
+          <div>
+            <p className="text-sm text-gray-600 mb-2">Required Pace Distribution</p>
+            <div style={{ width: '100%', height: 220 }}>
+              <ResponsiveContainer>
+                <BarChart data={bins}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="bin" />
+                  <YAxis allowDecimals={false} />
+                  <Tooltip />
+                  <Bar dataKey="count" fill="#60a5fa" />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -30,4 +30,4 @@ jobs:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
         run: |
           # Railway CLI uses RAILWAY_TOKEN env var automatically
-          railway up --service backend
+          railway up --service agentic_health_tracker

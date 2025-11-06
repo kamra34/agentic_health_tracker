@@ -89,13 +89,13 @@ jobs:
           node-version: '18'
       - name: Install Railway CLI
         run: npm i -g @railway/cli
-      - name: Link Railway project
+      - name: Configure Railway project (token via env)
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
           RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROJECT_ID }}
         run: |
           if [ -z "$RAILWAY_TOKEN" ]; then echo "RAILWAY_TOKEN not set" && exit 1; fi
-          railway login --token "$RAILWAY_TOKEN"
+          export RAILWAY_TOKEN
           if [ -n "$RAILWAY_PROJECT_ID" ]; then
             railway link --project "$RAILWAY_PROJECT_ID"
           fi
@@ -105,12 +105,16 @@ jobs:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
           RAILWAY_SERVICE: ${{ secrets.RAILWAY_SERVICE }}
           RAILWAY_ENVIRONMENT: ${{ secrets.RAILWAY_ENVIRONMENT }}
+          RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROJECT_ID }}
         run: |
+          export RAILWAY_TOKEN
+          PROJECT_FLAG=""
+          if [ -n "$RAILWAY_PROJECT_ID" ]; then PROJECT_FLAG="--project $RAILWAY_PROJECT_ID"; fi
           if [ -n "$RAILWAY_ENVIRONMENT" ]; then
-            railway environment "$RAILWAY_ENVIRONMENT"
+            railway environment "$RAILWAY_ENVIRONMENT" $PROJECT_FLAG
           fi
           if [ -n "$RAILWAY_SERVICE" ]; then
-            railway up --service "$RAILWAY_SERVICE" --ci
+            railway up --service "$RAILWAY_SERVICE" $PROJECT_FLAG --ci
           else
-            railway up --ci
+            railway up $PROJECT_FLAG --ci
           fi

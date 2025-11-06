@@ -63,3 +63,4 @@ logs
 *.sqlite3
 
 *clone_and_upgrade_db.py
+.claude/

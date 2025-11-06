@@ -25,9 +25,10 @@ jobs:
           if [ -z "$RAILWAY_TOKEN" ]; then echo "RAILWAY_TOKEN not set" && exit 1; fi
           echo "Railway token is set and will be used for authentication"
       - name: Deploy backend service to Railway
-        working-directory: backend
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
         run: |
           # Railway CLI uses RAILWAY_TOKEN env var automatically
+          # Deploy from backend directory
+          cd backend
           railway up --service agentic_health_tracker

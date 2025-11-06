@@ -199,7 +199,13 @@ function ChatWidget() {
           <div ref={messagesRef} className="p-3 space-y-3 overflow-auto" style={{ maxHeight: '55vh' }}>
             {messages.map((m, i) => (
               <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div className={`${m.role === 'user' ? 'bg-primary-600 text-white' : 'bg-gray-50 text-gray-900 border border-gray-200'} shadow-sm px-3 py-2 rounded-2xl max-w-[80%] whitespace-pre-wrap ${m._pending ? 'animate-pulse' : ''}`}>{m.content}</div>
+                <div className={`${m.role === 'user' ? 'bg-primary-600 text-white' : 'bg-gray-50 text-gray-900 border border-gray-200'} shadow-sm px-3 py-2 rounded-2xl max-w-[80%] ${m._pending ? 'animate-pulse' : ''}`}>
+                  {m.role === 'assistant' ? (
+                    <AssistantMessage content={m.content} />
+                  ) : (
+                    <div className="whitespace-pre-wrap">{m.content}</div>
+                  )}
+                </div>
               </div>
             ))}
 
@@ -269,3 +275,100 @@ export default ChatWidget;
     if (a === 'admin') return <UserIcon className="inline w-3.5 h-3.5 text-rose-600"/>;
     return <ListChecks className="inline w-3.5 h-3.5 text-gray-600"/>;
   };
+
+// Lightweight assistant renderer with JSON extraction and minimal markdown
+function AssistantMessage({ content }) {
+  // Try to extract a fenced JSON block for structured rendering
+  const jsonMatch = (content || '').match(/```json\s*([\s\S]*?)\s*```/i);
+  let data = null;
+  if (jsonMatch) {
+    try { data = JSON.parse(jsonMatch[1]); } catch (_) { data = null; }
+  }
+
+  // Structured metrics card
+  if (data && (data.type === 'metrics' || (data.per_day !== undefined && data.per_week !== undefined))) {
+    const perDay = data.per_day;
+    const perWeek = data.per_week;
+    const perMonth = data.per_month;
+    const delta = data.delta_kg;
+    const days = data.days;
+    const from = data?.period?.from || data.start_date;
+    const to = data?.period?.to || data.end_date;
+    return (
+      <div className="space-y-2">
+        {renderMinimalMarkdown(removeJsonBlock(content))}
+        <div className="mt-2 border border-indigo-200 bg-indigo-50 text-indigo-900 rounded-xl p-3 text-sm">
+          <div className="font-semibold mb-2">Averages {from && to ? (<span className="font-normal">({from} → {to})</span>) : null}</div>
+          <div className="grid grid-cols-3 gap-2">
+            <MetricChip label="Per Day" value={perDay} suffix="kg/day" />
+            <MetricChip label="Per Week" value={perWeek} suffix="kg/week" />
+            <MetricChip label="Per Month" value={perMonth} suffix="kg/month" />
+          </div>
+          {(delta !== undefined || days !== undefined) && (
+            <div className="mt-2 text-xs text-indigo-800">Total change: {formatNumber(delta)} kg · Days: {days}</div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // Fallback: minimal markdown (bold, lists, code) without external libs
+  return renderMinimalMarkdown(content);
+}
+
+function MetricChip({ label, value, suffix }) {
+  return (
+    <div className="rounded-lg bg-white border border-indigo-200 px-2.5 py-1.5">
+      <div className="text-[11px] text-indigo-600">{label}</div>
+      <div className="text-sm font-semibold text-indigo-900">{formatNumber(value)} <span className="text-xs font-normal text-indigo-700">{suffix}</span></div>
+    </div>
+  );
+}
+
+function formatNumber(v) {
+  if (v === null || v === undefined || Number.isNaN(v)) return '—';
+  const num = typeof v === 'number' ? v : parseFloat(v);
+  if (!isFinite(num)) return '—';
+  return (Math.round(num * 1000) / 1000).toString();
+}
+
+function removeJsonBlock(s) {
+  return (s || '').replace(/```json[\s\S]*?```/gi, '').trim();
+}
+
+function renderMinimalMarkdown(raw) {
+  const text = (raw || '').replace(/\r\n/g, '\n');
+  // Escape HTML
+  const esc = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+  // Bold **text** and inline code `code`
+  const withInline = esc
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/`([^`]+)`/g, '<code class="px-1 py-0.5 rounded bg-gray-100 border border-gray-200">$1</code>');
+  // Split into lines and build lists
+  const lines = withInline.split(/\n/);
+  const out = [];
+  let list = [];
+  const flushList = () => {
+    if (list.length) {
+      out.push(<ul className="list-disc pl-5 space-y-1" key={`ul-${out.length}`}>{list.map((li, idx) => <li key={idx} dangerouslySetInnerHTML={{ __html: li }} />)}</ul>);
+      list = [];
+    }
+  };
+  lines.forEach((ln) => {
+    const m = ln.match(/^\s*[-\*]\s+(.*)$/);
+    if (m) {
+      list.push(m[1]);
+    } else if (ln.trim() === '') {
+      flushList();
+      out.push(<div key={`br-${out.length}`} className="h-1" />);
+    } else {
+      flushList();
+      out.push(<div key={`p-${out.length}`} className="whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: ln }} />);
+    }
+  });
+  flushList();
+  return <div className="text-sm leading-6 space-y-1">{out}</div>;
+}

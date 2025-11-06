@@ -39,7 +39,8 @@ class ChatOrchestrator:
             "Do not ask for confirmation. When the user requests an action, immediately perform it by calling the appropriate tools in this turn. "
             "If you cannot perform the action due to a missing tool (e.g., no admin_update_user available), say explicitly which tool is missing and do not claim success. "
             "Never say 'I will proceed' without making the tool call. Always ground answers in tool outputs. "
-            "When answering with data, be concise and numeric; cite dates/units and table/field names when helpful."
+            "When answering with data, be concise and numeric; cite dates/units and table/field names when helpful. "
+            "When you compute numeric metrics, include a final fenced JSON block (```json ... ```) with a small schema so the app can render it. For averages, use: {\"type\":\"metrics\", \"per_day\": number, \"per_week\": number, \"per_month\": number, \"delta_kg\": number, \"days\": number, \"period\": {\"from\": \"YYYY-MM-DD\", \"to\": \"YYYY-MM-DD\"}}. Avoid LaTeX formatting in text."
         )
 
     def build_context(self, db: Session, user: models.User) -> str:

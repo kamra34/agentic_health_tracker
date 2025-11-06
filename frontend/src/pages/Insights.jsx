@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { userAPI, insightsAPI } from '../services/api';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area, BarChart, Bar } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area, BarChart, Bar, ReferenceArea } from 'recharts';
 import { format, differenceInCalendarDays, addDays } from 'date-fns';
 
 function Insights() {
@@ -70,14 +70,6 @@ function Insights() {
       return null;
     }).filter(Boolean);
 
-    // Apply training window filter to the displayed history
-    if (h.length > 0 && trainWindow && trainWindow < 10000) {
-      const lastDate = h[h.length - 1].date;
-      const cutoff = new Date(lastDate);
-      cutoff.setDate(cutoff.getDate() - (trainWindow - 1));
-      h = h.filter(p => p.date >= cutoff);
-    }
-
     const f = (forecast?.points || []).map((p) => {
       // API returns date objects; ensure Date
       const d = new Date(p.date);
@@ -103,6 +95,15 @@ function Insights() {
     const merged = [...h, ...f];
     return merged;
   }, [history, forecast, metric, user]);
+
+  // Training window overlay boundaries (based on full history)
+  const trainOverlay = useMemo(() => {
+    if (!history || history.length === 0 || !trainWindow || trainWindow >= 10000) return null;
+    const last = new Date(history[history.length - 1].date);
+    const cutoff = new Date(last);
+    cutoff.setDate(cutoff.getDate() - (trainWindow - 1));
+    return { x1: format(cutoff, 'yyyy-MM-dd'), x2: format(last, 'yyyy-MM-dd') };
+  }, [history, trainWindow]);
 
   const currentUnits = metric === 'weight' ? 'kg' : '';
 
@@ -187,6 +188,7 @@ function Insights() {
                     <option value="ols">Linear</option>
                     <option value="poly2">Quadratic</option>
                   </select>
+                  <span title="Holt: level + trend smoothing; SES: level only (no trend); Linear: straight line regression; Quadratic: polynomial curve (captures gentle curvature). Choose based on pattern stability." className="ml-1 inline-flex items-center justify-center w-5 h-5 text-[10px] font-semibold rounded-full border border-gray-300 text-gray-600 bg-white cursor-help">i</span>
                 </div>
               </div>
             </div>
@@ -204,6 +206,9 @@ function Insights() {
                   <Line type="monotone" dataKey="forecast" stroke="#2563eb" strokeDasharray="5 4" strokeWidth={2} dot={false} name="Forecast" />
                   <Line type="monotone" dataKey="upper" stroke="#93c5fd" strokeWidth={1} dot={false} name="Upper" />
                   <Line type="monotone" dataKey="lower" stroke="#93c5fd" strokeWidth={1} dot={false} name="Lower" />
+                  {trainOverlay && (
+                    <ReferenceArea x1={trainOverlay.x1} x2={trainOverlay.x2} strokeOpacity={0} fill="#bfdbfe" fillOpacity={0.2} />
+                  )}
                 </LineChart>
               </ResponsiveContainer>
             </div>

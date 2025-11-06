@@ -6,6 +6,8 @@ python-multipart==0.0.20
 # Database
 sqlalchemy==2.0.36
 psycopg[binary]==3.2.12
+# Include psycopg2 for SQLAlchemy URLs that default to psycopg2 and for utility scripts
+psycopg2-binary==2.9.9
 alembic==1.14.0
 
 # Authentication

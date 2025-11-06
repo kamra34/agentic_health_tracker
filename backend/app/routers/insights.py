@@ -753,7 +753,7 @@ def get_distributions(
         return DistributionsResponse(daily_change_hist=[], outliers_last_30d=0, recent_std=0.0, unit_label=unit_label if 'unit_label' in locals() else 'kg/day')
     mn, mx = min(changes), max(changes)
     if mn == mx:
-        hist = [HistogramBin(bin_start=mn, bin_end=mn, count=len(deltas))]
+        hist = [HistogramBin(bin_start=mn, bin_end=mn, count=len(changes))]
     else:
         width = (mx - mn) / bins
         counts = [0] * bins

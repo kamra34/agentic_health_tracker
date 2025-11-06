@@ -178,7 +178,8 @@ async def stream_chat_task(
                 yield f"event: agent\ndata: {json.dumps(ev)}\n\n"
             if rec.get("status") in ("done", "error"):
                 # send final
-                yield f"event: status\ndata: {json.dumps({"status": rec.get('status'), "reply": rec.get('reply'), "error": rec.get('error')})}\n\n"
+                payload = {"status": rec.get("status"), "reply": rec.get("reply"), "error": rec.get("error")}
+                yield "event: status\ndata: " + json.dumps(payload) + "\n\n"
                 break
             await asyncio.sleep(0.5)
 

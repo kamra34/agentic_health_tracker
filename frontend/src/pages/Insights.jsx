@@ -1,13 +1,4 @@
 import { useMemo, useState } from 'react';
-  // Diagnostics-scoped data
-  const { data: summaryDiag } = useQuery({
-    queryKey: ['insights','summary','diag', diagWindow],
-    queryFn: async () => (await insightsAPI.getSummary({ window_days: (diagWindow>0?diagWindow:undefined) })).data,
-  });
-  const { data: distributionsDiag } = useQuery({
-    queryKey: ['insights','distributions','diag', diagWindow],
-    queryFn: async () => (await insightsAPI.getDistributions(20, { window_days: (diagWindow>0?diagWindow:undefined) })).data,
-  });
 import { useQuery } from '@tanstack/react-query';
 import { userAPI, insightsAPI } from '../services/api';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area, BarChart, Bar, ReferenceArea } from 'recharts';
@@ -21,6 +12,16 @@ function Insights() {
   const [method, setMethod] = useState('holt'); // 'holt' | 'ses' | 'ols' | 'poly2'
   // Diagnostics controls (independent window; default 3 months)
   const [diagWindow, setDiagWindow] = useState(90);
+
+  // Diagnostics-scoped data (depends on diagWindow)
+  const { data: summaryDiag } = useQuery({
+    queryKey: ['insights','summary','diag', diagWindow],
+    queryFn: async () => (await insightsAPI.getSummary({ window_days: (diagWindow > 0 ? diagWindow : undefined) })).data,
+  });
+  const { data: distributionsDiag } = useQuery({
+    queryKey: ['insights','distributions','diag', diagWindow],
+    queryFn: async () => (await insightsAPI.getDistributions(20, { window_days: (diagWindow > 0 ? diagWindow : undefined) })).data,
+  });
 
   // Base data: history for past 6 months (from dashboard)
   const { data: dashboard } = useQuery({
@@ -283,6 +284,7 @@ function Insights() {
             </div>
           </div>
         </div>
+        <div className="space-y-6">
 
           {/* Diagnostics */}
           <div className="stat-card bg-gradient-to-br from-amber-50 to-orange-100 border-amber-200">
@@ -314,7 +316,7 @@ function Insights() {
                 {summaryDiag?.rtm ? (
                   <div>
                     <div className="font-semibold">{Math.round(((summaryDiag.rtm.rate || 0) * 100))}% of extremes revert ({summaryDiag.rtm.reversions}/{summaryDiag.rtm.extremes})</div>
-                    <div className="text-xs text-gray-600">Window: {summaryDiag.rtm.window_start || '--'} � {summaryDiag.rtm.window_end || '--'}</div>
+                    <div className="text-xs text-gray-600">Window: {summaryDiag.rtm.window_start || '--'} - {summaryDiag.rtm.window_end || '--'}</div>
                     {summaryDiag.rtm.example_dates && summaryDiag.rtm.example_dates.length > 0 ? (
                       <div className="mt-1 text-xs text-gray-700">Examples: {summaryDiag.rtm.example_dates.join(', ')}</div>
                     ) : (
@@ -331,7 +333,7 @@ function Insights() {
           {/* Goal Analytics - Placeholder */}
           <GoalAnalyticsSection goalAnalytics={goalAnalytics} />
 
-          {/* What‑If Simulator - Placeholder */}
+          {/* WhatÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬ËœIf Simulator - Placeholder */}
           <WhatIfSection dashboard={dashboard} />
         </div>
       </div>
@@ -720,8 +722,6 @@ function AdherenceCard({ summary, dashboard }) {
     </div>
   );
 }
-
-
 
 
 

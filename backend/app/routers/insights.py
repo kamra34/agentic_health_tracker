@@ -273,6 +273,27 @@ def _forecast_cache_set(user_id: int, key: str, data: object):
     _cache.setdefault("forecast", {})[user_id] = (datetime.utcnow().timestamp(), data)
 
 
+# Generic helpers for parameter-aware cache (similar to forecast cache)
+def _param_cache_get(bucket: str, user_id: int, key: str):
+    rec = _cache.get(bucket, {}).get(user_id)
+    if not rec:
+        return None
+    ts, data = rec
+    if (datetime.utcnow().timestamp() - ts) > _CACHE_TTL_SECONDS:
+        return None
+    if getattr(data, "_cache_key", None) == key:
+        return data
+    return None
+
+
+def _param_cache_set(bucket: str, user_id: int, key: str, data: object):
+    try:
+        setattr(data, "_cache_key", key)
+    except Exception:
+        pass
+    _cache.setdefault(bucket, {})[user_id] = (datetime.utcnow().timestamp(), data)
+
+
 # ---------------- Endpoints ----------------
 @router.get("/summary", response_model=SummaryResponse)
 def get_summary(
@@ -280,7 +301,8 @@ def get_summary(
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    cached = _cache_get("summary", current_user.id)
+    cache_key = f"wd:{window_days or 90}"
+    cached = _param_cache_get("summary", current_user.id, cache_key)
     if cached:
         return cached
     weights = (
@@ -506,7 +528,7 @@ def get_summary(
         ),
         rtm=rtm_obj,
     )
-    _cache_set("summary", current_user.id, resp)
+    _param_cache_set("summary", current_user.id, cache_key, resp)
     return resp
 
 
@@ -679,7 +701,8 @@ def get_distributions(
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    cached = _cache_get("distributions", current_user.id)
+    cache_key = f"bins:{bins}:wd:{window_days or 0}"
+    cached = _param_cache_get("distributions", current_user.id, cache_key)
     if cached and len(cached.daily_change_hist) == bins:
         return cached
     weights = (
@@ -735,7 +758,7 @@ def get_distributions(
         window_outliers=win_out,
         window_std=win_std,
     )
-    _cache_set("distributions", current_user.id, resp)
+    _param_cache_set("distributions", current_user.id, cache_key, resp)
     return resp
 
 

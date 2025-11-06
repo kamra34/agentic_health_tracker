@@ -668,7 +668,8 @@ def get_composition(
         bf = float(w.body_fat_percentage) if getattr(w, 'body_fat_percentage', None) is not None else None
         muscle = float(w.muscle_mass) if getattr(w, 'muscle_mass', None) is not None else None
         fat_mass = (weight * bf / 100.0) if bf is not None else None
-        lean_mass = muscle if muscle is not None else (weight - fat_mass if fat_mass is not None else None)
+        # Prefer fat-free mass (weight - fat) when body fat is available; muscle mass is a subset of lean
+        lean_mass = (weight - fat_mass) if fat_mass is not None else (muscle if muscle is not None else None)
         out.append(CompositionPoint(
             date=w.date_of_measurement,
             weight=round(weight, 2),
@@ -954,7 +955,7 @@ class CalendarResponse(BaseModel):
 
 @router.get("/calendar", response_model=CalendarResponse)
 def get_calendar(
-    days: int = Query(365, ge=30, le=730),
+    days: int = Query(365, ge=30, le=3650),
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):

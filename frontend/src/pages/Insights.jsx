@@ -80,9 +80,10 @@ function Insights() {
     queryKey: ['targets','all'],
     queryFn: async () => (await targetAPI.list()).data,
   });
+  const [heatYears, setHeatYears] = useState(2);
   const { data: calendar } = useQuery({
-    queryKey: ['insights','calendar'],
-    queryFn: async () => (await insightsAPI.getCalendar(365)).data,
+    queryKey: ['insights','calendar', heatYears],
+    queryFn: async () => (await insightsAPI.getCalendar(Math.max(365, heatYears * 365))).data,
   });
 
   const history = dashboard?.weight_trend || [];
@@ -329,12 +330,8 @@ function Insights() {
           {/* Composition Trends */}
           <CompositionSection composition={composition} />
 
-          {/* Calendar Heatmap - Placeholder */}
-          <div className="card">
-            <h2 className="text-lg font-semibold text-gray-800 mb-2">Calendar Heatmap</h2>
-            <p className="text-sm text-gray-600 mb-3">Density of weigh-ins by date</p>
-            <PlaceholderHeatmap calendar={calendar} />
-          </div>
+          {/* Calendar Heatmap (Enhanced) */}
+          <CalendarHeatmap calendar={calendar} heatYears={heatYears} setHeatYears={setHeatYears} />
 
           {/* Distributions */}
           <div className="card">
@@ -414,37 +411,133 @@ function PlaceholderChart({ label = 'Chart placeholder', height = 180 }) {
   );
 }
 
-function PlaceholderHeatmap({ calendar }) {
-  // Render last 12 months by month blocks using calendar.days
+function CalendarHeatmap({ calendar, heatYears, setHeatYears }) {
   const days = calendar?.days || [];
-  if (!days.length) {
-    return <div className="w-full border border-dashed border-gray-300 rounded-md bg-gray-50/50 p-4 text-sm text-gray-500">No data yet</div>;
-  }
-  // Group by month
-  const groups = {};
+
+  // Group by year
+  const byYear = {};
   for (const cell of days) {
     const d = new Date(cell.date);
-    const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
-    (groups[key] ||= []).push({ d, count: cell.count });
+    const y = d.getFullYear();
+    (byYear[y] ||= []).push({ d, count: cell.count });
   }
-  const keys = Object.keys(groups).sort();
-  const palette = (c) => c === 0 ? 'bg-gray-200' : c === 1 ? 'bg-emerald-200' : c === 2 ? 'bg-emerald-300' : 'bg-emerald-500';
+  const nowYear = new Date().getFullYear();
+  const yearsAll = Object.keys(byYear).map(n=>parseInt(n,10)).sort((a,b)=>b-a);
+  const years = yearsAll.slice(0, Math.max(1, heatYears));
+  const [activeYear, setActiveYear] = useState(years[0] || nowYear);
+  useEffect(()=>{
+    if (years.length) {
+      if (!years.includes(activeYear)) setActiveYear(years[0]);
+    }
+  }, [calendar, heatYears]);
+
+  const yearDays = (byYear[activeYear] || []).sort((a,b)=>a.d-b.d);
+  const totalEntries = yearDays.reduce((a,b)=>a+(b.count||0),0);
+  const activeDays = yearDays.filter(x=>x.count>0).length;
+  // Longest streak for this year (consecutive days with count>0)
+  let longest = 0, run = 0, prev = null;
+  for (const x of yearDays) {
+    if (x.count>0 && prev && differenceInCalendarDays(x.d, prev)===1) {
+      run += 1;
+    } else {
+      run = x.count>0 ? 1 : 0;
+    }
+    longest = Math.max(longest, run);
+    prev = x.d;
+  }
+  const weeksInYear = 52.0;
+  const entriesPerWeek = (totalEntries / weeksInYear).toFixed(1);
+
+  // Build monthly blocks for active year with day-of-week alignment
+  const months = Array.from({length:12}, (_,i)=>i);
+  const monthBlocks = months.map(m => {
+    const start = new Date(activeYear, m, 1);
+    const end = new Date(activeYear, m+1, 0);
+    const arr = [];
+    const firstDOW = start.getDay(); // 0 Sun .. 6 Sat
+    for (let i=0;i<firstDOW;i++) arr.push({ empty:true });
+    let cur = new Date(start);
+    while (cur <= end) {
+      const found = yearDays.find(x => x.d.getFullYear()===activeYear && x.d.getMonth()===m && x.d.getDate()===cur.getDate());
+      arr.push({ empty:false, d: new Date(cur), count: found ? found.count : 0 });
+      cur = addDays(cur, 1);
+    }
+    return { month: m, cells: arr };
+  });
+  const maxCount = Math.max(1, ...yearDays.map(x=>x.count||0));
+  const palette = (c) => {
+    if (c<=0) return 'bg-gray-200';
+    const t = c / maxCount;
+    if (t < 0.25) return 'bg-emerald-200';
+    if (t < 0.5) return 'bg-emerald-300';
+    if (t < 0.75) return 'bg-emerald-400';
+    return 'bg-emerald-600';
+  };
+
   return (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-      {keys.map((k) => {
-        const arr = groups[k].sort((a,b)=>a.d-b.d);
-        const label = `${arr[0].d.toLocaleString('default', { month: 'short' })} ${arr[0].d.getFullYear()}`;
-        return (
-          <div key={k} className="border rounded-md p-2 bg-white">
-            <div className="text-xs text-gray-600 mb-1">{label}</div>
+    <div className="card">
+      <div className="flex items-start justify-between mb-2">
+        <div>
+          <h2 className="text-lg font-semibold text-gray-800">Calendar Heatmap</h2>
+          <p className="text-sm text-gray-600">Weigh‑in density by date</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="text-sm text-gray-600">Range</span>
+          <select value={heatYears} onChange={(e)=>setHeatYears(parseInt(e.target.value))} className="border rounded-md px-2 py-1 text-sm">
+            <option value={1}>1y</option>
+            <option value={2}>2y</option>
+            <option value={3}>3y</option>
+            <option value={5}>5y</option>
+          </select>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-2 flex-wrap mb-3">
+        {years.length ? (
+          years.map(y => (
+            <button key={y} onClick={()=>setActiveYear(y)} className={`px-2 py-1 rounded border text-sm ${y===activeYear? 'bg-emerald-100 border-emerald-300 text-emerald-800':'bg-white border-gray-200 text-gray-700'}`}>{y}</button>
+          ))
+        ) : (
+          <span className="text-xs text-gray-500">No years with data in selected range.</span>
+        )}
+      </div>
+
+      <div className="grid grid-cols-3 md:grid-cols-6 gap-3 mb-4">
+        <KpiCard label="Total Entries" value={totalEntries} />
+        <KpiCard label="Active Days" value={activeDays} />
+        <KpiCard label="Best Streak" value={`${longest} d`} />
+        <KpiCard label="Entries/Week" value={entriesPerWeek} />
+      </div>
+      {totalEntries === 0 && (
+        <div className="text-xs text-gray-500 mb-2">No entries found in the selected range. Try a smaller range.</div>
+      )}
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {monthBlocks.map(({month, cells}) => (
+          <div key={month} className="border rounded-md p-2 bg-white">
+            <div className="text-xs text-gray-600 mb-1">{new Date(activeYear, month, 1).toLocaleString('default', { month: 'short' })}</div>
             <div className="grid grid-cols-7 gap-1">
-              {arr.map((x, idx) => (
-                <div key={idx} className={`h-3 w-3 rounded-sm ${palette(x.count)}`} title={`${format(x.d,'yyyy-MM-dd')}: ${x.count} entries`} />
+              {[ 'S','M','T','W','T','F','S'].map((d,i)=> (
+                <div key={`h-${i}`} className="text-[10px] text-gray-400 text-center">{d}</div>
+              ))}
+              {cells.map((c, idx) => c.empty ? (
+                <div key={idx} className="h-3 w-3" />
+              ) : (
+                <div key={idx} className={`h-3 w-3 rounded-sm ${palette(c.count)}`} title={`${format(c.d,'yyyy-MM-dd')}: ${c.count} entries`} />
               ))}
             </div>
           </div>
-        );
-      })}
+        ))}
+      </div>
+
+      <div className="flex items-center gap-2 mt-3">
+        <span className="text-xs text-gray-500">Less</span>
+        {[0,1,2,3,4].map(i=>{
+          const c = Math.round((i/4)*maxCount);
+          return <div key={i} className={`h-3 w-3 rounded-sm ${palette(c)}`} />
+        })}
+        <span className="text-xs text-gray-500">More</span>
+      </div>
     </div>
   );
 }
@@ -534,6 +627,7 @@ function CompositionSection({ composition }) {
       dateLabel: format(new Date(p.date), 'yyyy-MM-dd'),
       fat: p.fat_mass_est != null ? parseFloat(p.fat_mass_est) : null,
       lean: p.lean_mass_est != null ? parseFloat(p.lean_mass_est) : null,
+      weight: p.weight != null ? parseFloat(p.weight) : null,
     }))
     .filter(p => p.fat != null && p.lean != null)
     .sort((a,b)=>a.d-b.d);
@@ -681,15 +775,20 @@ function CompositionSection({ composition }) {
             <Tooltip content={({ label, payload }) => {
               if (!payload || payload.length===0) return null;
               const d = payload[0].payload;
-              const total = d.fat + d.lean;
+              const total = (d.fat ?? 0) + (d.lean ?? 0);
+              const logged = d.weight;
+              const delta = (logged != null ? (logged - total) : null);
               return (
                 <div className="bg-white rounded shadow p-2 text-sm">
                   <div className="font-medium mb-1">{label}</div>
                   {!modePct ? (
                     <>
-                      <div>Fat: {d.fat.toFixed(2)} kg</div>
-                      <div>Lean: {d.lean.toFixed(2)} kg</div>
-                      <div className="text-gray-600">Total: {total.toFixed(2)} kg</div>
+                      <div>Fat: {d.fat?.toFixed(2)} kg</div>
+                      <div>Lean: {d.lean?.toFixed(2)} kg</div>
+                      <div className="text-gray-600">Total (fat+lean): {total.toFixed(2)} kg</div>
+                      {logged != null && (
+                        <div className="text-gray-600">Logged weight: {logged.toFixed(2)} kg{delta!=null ? ` (Δ ${delta.toFixed(2)} kg)` : ''}</div>
+                      )}
                     </>
                   ) : (
                     <>

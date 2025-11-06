@@ -19,8 +19,8 @@ function Insights() {
 
   // Summary
   const { data: summary } = useQuery({
-    queryKey: ['insights','summary'],
-    queryFn: async () => (await insightsAPI.getSummary()).data,
+    queryKey: ['insights','summary', trainWindow],
+    queryFn: async () => (await insightsAPI.getSummary({ window_days: trainWindow })).data,
   });
 
   // Forecast
@@ -686,4 +686,6 @@ function AdherenceCard({ summary, dashboard }) {
     </div>
   );
 }
+
+
 

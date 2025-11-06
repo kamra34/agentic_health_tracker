@@ -180,6 +180,15 @@ class Adherence(BaseModel):
     longest_gap_days: int = 0
 
 
+class RegressToMean(BaseModel):
+    window_start: Optional[date] = None
+    window_end: Optional[date] = None
+    extremes: int = 0
+    reversions: int = 0
+    rate: float = 0.0  # 0..1 fraction
+    example_dates: List[date] = []
+
+
 class SummaryResponse(BaseModel):
     trend_slope_kg_per_day: Optional[float] = None
     trend_slope_kg_per_week: Optional[float] = None
@@ -198,6 +207,7 @@ class SummaryResponse(BaseModel):
     adherence_window_end: Optional[date] = None
     plateau_flag: bool
     milestones: Milestones
+    rtm: Optional[RegressToMean] = None
 
 
 class ForecastPoint(BaseModel):
@@ -266,6 +276,7 @@ def _forecast_cache_set(user_id: int, key: str, data: object):
 # ---------------- Endpoints ----------------
 @router.get("/summary", response_model=SummaryResponse)
 def get_summary(
+    window_days: Optional[int] = Query(None, ge=7, le=2000, description="Use last N days for trend/diagnostics (default 90)"),
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -297,8 +308,8 @@ def get_summary(
     xs = _daily_x_axis(list(dates))
     ys = list(values)
 
-    # Compute trend limited to recent window: at most last 90 days and at least 14 days
-    max_window_days = 90
+    # Compute trend limited to recent window: at most last N days and at least 14 days
+    max_window_days = window_days or 90
     min_span_days = 14
     cutoff = dates[-1] - timedelta(days=max_window_days - 1)
     recent_points = [(d, v) for d, v in zip(dates, ys) if d >= cutoff]
@@ -407,6 +418,48 @@ def get_summary(
         rng = max(recent_vals) - min(recent_vals)
         plateau_flag = (rng <= 0.2) and (abs(slope_per_day) <= 0.005)
 
+    # Regress-to-mean diagnostics over the same trend window
+    rtm_obj: Optional[RegressToMean] = None
+    if trend_start and trend_end:
+        window_series = [(d, v) for (d, v) in series if trend_start <= d <= trend_end]
+        # daily normalized changes between consecutive observed days
+        deltas: List[float] = []
+        delta_dates: List[date] = []
+        for (d1, v1), (d2, v2) in zip(window_series[:-1], window_series[1:]):
+            gap = (d2 - d1).days
+            if gap > 0:
+                deltas.append((v2 - v1) / gap)
+                delta_dates.append(d2)
+        if len(deltas) >= 3:
+            mu = mean(deltas)
+            sd = pstdev(deltas) if len(deltas) >= 2 else 0.0
+            extremes_idx: List[int] = []
+            if sd > 0:
+                for i, dv in enumerate(deltas):
+                    if abs(dv - mu) > 2 * sd:
+                        extremes_idx.append(i)
+            # Evaluate immediate reversion: next change opposite sign and at least 30% magnitude
+            reversions = 0
+            examples: List[date] = []
+            for i in extremes_idx:
+                if i + 1 < len(deltas):
+                    dv = deltas[i]
+                    nxt = deltas[i + 1]
+                    if (dv > 0 and nxt < 0) or (dv < 0 and nxt > 0):
+                        if abs(nxt) >= 0.3 * abs(dv):
+                            reversions += 1
+                            if len(examples) < 3:
+                                examples.append(delta_dates[i])
+            rate = reversions / len(extremes_idx) if extremes_idx else 0.0
+            rtm_obj = RegressToMean(
+                window_start=trend_start,
+                window_end=trend_end,
+                extremes=len(extremes_idx),
+                reversions=reversions,
+                rate=round(rate, 3),
+                example_dates=examples,
+            )
+
     # BMI slope over same trend window if height available
     bmi_slope_week: Optional[float] = None
     if current_user.height:
@@ -451,6 +504,7 @@ def get_summary(
             last_new_low=last_new_low,
             last_new_high=last_new_high,
         ),
+        rtm=rtm_obj,
     )
     _cache_set("summary", current_user.id, resp)
     return resp

@@ -95,7 +95,7 @@ export const adminAPI = {
 
 // Insights APIs
 export const insightsAPI = {
-  getSummary: () => api.get('/api/insights/summary'),
+  getSummary: (params = {}) => api.get('/api/insights/summary', { params }),
   getForecast: ({ metric = 'weight', horizon = 60, method = 'holt', train_window_days = 60, alpha, beta } = {}) =>
     api.get('/api/insights/forecast', { params: { metric, horizon, method, train_window_days, alpha, beta } }),
   getComposition: () => api.get('/api/insights/composition'),
@@ -106,3 +106,4 @@ export const insightsAPI = {
 };
 
 export default api;
+

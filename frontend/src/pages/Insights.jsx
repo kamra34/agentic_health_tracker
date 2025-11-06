@@ -327,17 +327,6 @@ function Insights() {
               </div>
             </div>
           </div>
-					{summary.rtm.example_dates && summary.rtm.example_dates.length > 0 && (
-					  <div className="mt-1 text-xs text-gray-700">Examples: {summary.rtm.example_dates.join(
-)}</div>
-					)}
-				  </div>
-				) : (
-				  <div className="font-semibold">Not enough data</div>
-				)}
-			  </div>
-			</div>
-		  </div>
 
           {/* Goal Analytics - Placeholder */}
           <GoalAnalyticsSection goalAnalytics={goalAnalytics} />

@@ -20,13 +20,13 @@ function Insights() {
   // Summary
   const { data: summary } = useQuery({
     queryKey: ['insights','summary', trainWindow],
-    queryFn: async () => (await insightsAPI.getSummary({ window_days: trainWindow })).data,
+    queryFn: async () => (await insightsAPI.getSummary({ window_days: (trainWindow>0?trainWindow:undefined) })).data,
   });
 
   // Forecast
   const { data: forecast } = useQuery({
     queryKey: ['insights','forecast', metric, trainWindow, horizonDays, method],
-    queryFn: async () => (await insightsAPI.getForecast({ metric, horizon: horizonDays, method, train_window_days: trainWindow })).data,
+    queryFn: async () => (await insightsAPI.getForecast({ metric, horizon: horizonDays, method, train_window_days: (trainWindow>0?trainWindow:undefined) })).data,
   });
 
   // Insights data from backend
@@ -97,19 +97,7 @@ function Insights() {
   }, [history, forecast, metric, user]);
 
   // Training window overlay boundaries (based on full history)
-  const trainOverlay = useMemo(() => {
-    if (!history || history.length === 0 || !trainWindow || trainWindow >= 10000) return null;
-    const last = new Date(history[history.length - 1].date);
-    const cutoff = new Date(last);
-    cutoff.setDate(cutoff.getDate() - (trainWindow - 1));
-    return { x1: format(cutoff, 'yyyy-MM-dd'), x2: format(last, 'yyyy-MM-dd') };
-  }, [history, trainWindow]);
-
-  const currentUnits = metric === 'weight' ? 'kg' : '';
-
-  // Seasonality data (fallback labels and mapping)
-  const weekdayData = useMemo(() => {
-    const labels = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const trainOverlay = useMemo(() => {\n    if (!history || history.length === 0 || trainWindow == null || trainWindow <= 0) return null;\n    const last = new Date(history[history.length - 1].date);\n    const cutoff = new Date(last);\n    cutoff.setDate(cutoff.getDate() - (trainWindow - 1));\n    return { x1: format(cutoff, 'yyyy-MM-dd'), x2: format(last, 'yyyy-MM-dd') };\n  }, [history, trainWindow]);
     const arr = seasonality?.weekday_avg || [];
     return labels.map((name, i) => ({ name, value: arr[i] ?? 0 }));
   }, [seasonality]);
@@ -169,7 +157,7 @@ function Insights() {
                     <option value={60}>2 months</option>
                     <option value={90}>3 months</option>
                     <option value={180}>6 months</option>
-                    <option value={10000}>All</option>
+                    <option value={0}>All</option>
                   </select>
                 </div>
                 <div className="flex items-center gap-2">
@@ -296,7 +284,7 @@ function Insights() {
 </div>
 			  </div>
 			  <div>
-				<div className="text-xs text-gray-600">Outliers (30d)</div>
+				<div className="text-xs text-gray-600">Outliers (window)</div>
 				<div className="font-semibold">
 
 </div>
@@ -711,6 +699,10 @@ function AdherenceCard({ summary, dashboard }) {
     </div>
   );
 }
+
+
+
+
 
 
 

@@ -25,7 +25,7 @@ jobs:
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/wtracker_test
       SECRET_KEY: test-secret-key-for-ci-cd-pipeline-only
-      CORS_ORIGINS: "*"
+      CORS_ORIGINS: '["*"]'
     steps:
       - uses: actions/checkout@v3
       - name: Set up Python

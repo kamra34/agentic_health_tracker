@@ -64,3 +64,4 @@ logs
 
 *clone_and_upgrade_db.py
 .claude/
+migrate_*

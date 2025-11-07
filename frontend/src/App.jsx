@@ -5,6 +5,7 @@ import useAuthStore from './stores/authStore';
 // Placeholder components (we'll create these in the next phase)
 import Login from './pages/Login';
 import Signup from './pages/Signup';
+import ForgotPassword from './pages/ForgotPassword';
 import Dashboard from './pages/Dashboard';
 import WeightEntry from './pages/WeightEntry';
 import TargetEntry from './pages/TargetEntry';
@@ -42,6 +43,10 @@ function App() {
       <Route
         path="/signup"
         element={isAuthenticated ? <Navigate to="/dashboard" /> : <Signup />}
+      />
+      <Route
+        path="/forgot-password"
+        element={isAuthenticated ? <Navigate to="/dashboard" /> : <ForgotPassword />}
       />
 
       {/* Protected routes */}

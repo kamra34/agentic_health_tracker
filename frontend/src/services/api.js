@@ -42,7 +42,7 @@ api.interceptors.response.use(
 // Auth APIs
 export const authAPI = {
   login: (username, password) =>
-    api.post('/api/auth/login', 
+    api.post('/api/auth/login',
       new URLSearchParams({ username, password }),
       { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
     ),
@@ -52,6 +52,9 @@ export const authAPI = {
     api.post('/api/auth/change-password', null, {
       params: { old_password: oldPassword, new_password: newPassword }
     }),
+  forgotPassword: (email) => api.post('/api/auth/forgot-password', { email }),
+  resetPassword: (email, newPassword) => api.post('/api/auth/reset-password', { email, new_password: newPassword }),
+  forgotUsername: (email) => api.post('/api/auth/forgot-username', { email }),
 };
 
 // User APIs

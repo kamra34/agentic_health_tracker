@@ -37,13 +37,18 @@ function ForgotPassword() {
 
     try {
       const response = await authAPI.forgotUsername(email);
+      // Check if username is included (fallback when email is not configured)
       if (response.data.username) {
         setMessage({
           type: 'success',
-          text: `Your username is: ${response.data.username}`
+          text: response.data.message || `Your username is: ${response.data.username}`
         });
       } else {
-        setMessage({ type: 'success', text: response.data.message });
+        // Email was sent successfully
+        setMessage({
+          type: 'success',
+          text: response.data.message || 'Your username has been sent to your email address.'
+        });
       }
       setEmail('');
     } catch (error) {
@@ -182,7 +187,7 @@ function ForgotPassword() {
                   required
                 />
                 <p className="text-xs text-gray-500 mt-1">
-                  We'll show your username if an account exists with this email
+                  Your username will be sent to this email address
                 </p>
               </div>
 
@@ -195,8 +200,7 @@ function ForgotPassword() {
               </button>
 
               <p className="text-xs text-gray-500 mt-4">
-                Note: This is a simplified recovery process for MVP. In production, the username
-                would be sent to your email.
+                Note: If email is not configured on the server, the username will be displayed here instead.
               </p>
             </form>
           )}

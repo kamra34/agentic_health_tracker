@@ -4,6 +4,7 @@ Authentication routes: login, signup, token management.
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
+import logging
 
 from ..database import get_db
 from .. import models, schemas
@@ -13,6 +14,9 @@ from ..auth import (
     get_password_hash,
     get_current_user
 )
+from ..email_utils import send_username_recovery_email, send_password_reset_confirmation_email
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 
@@ -184,6 +188,11 @@ def reset_password(
     user.password_hash = get_password_hash(request.new_password)
     db.commit()
 
+    # Send confirmation email
+    email_sent = send_password_reset_confirmation_email(request.email, user.name)
+    if not email_sent:
+        logger.warning(f"Failed to send password reset confirmation email to {request.email}")
+
     return {"message": "Password reset successfully. You can now log in with your new password."}
 
 
@@ -193,10 +202,7 @@ def forgot_username(
     db: Session = Depends(get_db)
 ):
     """
-    Retrieve username by email.
-
-    Note: In production, this should send the username via email.
-    For now, it returns the username directly (simplified for MVP).
+    Retrieve username by email and send it via email.
     """
     user = db.query(models.User).filter(models.User.email == request.email).first()
 
@@ -206,8 +212,17 @@ def forgot_username(
             detail="No account found with this email"
         )
 
-    # In production, send email with username
+    # Send username via email
+    email_sent = send_username_recovery_email(request.email, user.name)
+
+    if not email_sent:
+        logger.warning(f"Failed to send username recovery email to {request.email}")
+        # Still return success but with a note that email wasn't configured
+        return {
+            "message": "Email service not configured. Your username is: " + user.name,
+            "username": user.name  # Fallback to returning username if email fails
+        }
+
     return {
-        "message": "Your username has been sent to your email.",
-        "username": user.name  # Remove this in production, send via email instead
+        "message": "Your username has been sent to your email address."
     }

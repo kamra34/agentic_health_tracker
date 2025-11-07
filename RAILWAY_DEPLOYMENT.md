@@ -28,10 +28,17 @@
   ```
   DATABASE_URL=${{Postgres.DATABASE_URL}}
   SECRET_KEY=generate-random-32-char-string-here
-  CORS_ORIGINS=http://localhost:5173,https://your-frontend-domain.vercel.app
+  CORS_ORIGINS=http://localhost:5173,http://localhost:3000,https://your-frontend-domain.vercel.app
+  OPENAI_API_KEY=your-openai-api-key-here
   ACCESS_TOKEN_EXPIRE_MINUTES=10080
   DEBUG=False
   ```
+
+**Important Notes:**
+- `CORS_ORIGINS` must be a comma-separated list of allowed origins (no spaces after commas)
+- Make sure to replace `https://your-frontend-domain.vercel.app` with your actual Vercel URL
+- The OpenAI API key is required for the AI chat functionality
+- After deploying frontend, come back and update `CORS_ORIGINS` with the actual Vercel URL
 
 5. Click **"Deploy"**
 6. Railway builds and deploys automatically
@@ -66,20 +73,47 @@
      ```
 5. Click **"Deploy"**
 
-### 5. Update CORS
+### 5. Update CORS (IMPORTANT!)
 
-1. Go back to Railway backend
-2. Update `CORS_ORIGINS` environment variable
-3. Add your frontend URL: `https://your-app.vercel.app`
-4. Service will automatically redeploy
+After your frontend is deployed and you have the Vercel URL:
 
-### 6. Test Your App!
+1. Go back to Railway dashboard
+2. Select your backend service
+3. Go to **Variables** tab
+4. Update `CORS_ORIGINS` to include your actual Vercel URL:
+   ```
+   CORS_ORIGINS=http://localhost:5173,http://localhost:3000,https://agentic-health-tracker.vercel.app
+   ```
+   **Note:** Replace `agentic-health-tracker.vercel.app` with your actual Vercel domain
+5. Service will automatically redeploy with new CORS settings
+6. Wait for deployment to complete (~2-3 minutes)
+
+### 6. Configure Email (Optional but Recommended)
+
+Email is used for username recovery and password reset confirmations.
+
+See [EMAIL_SETUP.md](EMAIL_SETUP.md) for detailed instructions.
+
+Quick setup for Gmail:
+1. Generate Gmail app password
+2. Add to Railway environment variables:
+   ```
+   SMTP_USER=your-email@gmail.com
+   SMTP_PASSWORD=your-app-password
+   EMAIL_FROM=your-email@gmail.com
+   ```
+3. Service will automatically redeploy
+
+**Note**: If email is not configured, username recovery will still work but display the username in the response instead of sending it via email.
+
+### 7. Test Your App!
 
 Visit your frontend URL and:
 - Sign up for an account
 - Add some weight entries
 - Set a target goal
 - Explore the dashboard
+- Test forgot password/username features
 
 ## 🔧 Troubleshooting
 

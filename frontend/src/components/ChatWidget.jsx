@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { chatAPI, API_URL } from '../services/api';
-import { MessageCircle, X, Send, Bot, Brain, Database, Activity, Hammer, ListChecks, User as UserIcon } from 'lucide-react';
+import { MessageCircle, X, Send, Bot, Brain, Database, Activity, Hammer, ListChecks, User as UserIcon, Trash2 } from 'lucide-react';
 import useAuthStore from '../stores/authStore';
 
 function ChatWidget() {
@@ -47,15 +47,25 @@ function ChatWidget() {
     } catch (_) { /* ignore */ }
   }, [messages, open, events]);
 
-  // Persist state to localStorage whenever it changes
+  // Persist state to localStorage whenever it changes (keep last 20 messages only)
   useEffect(() => {
     try {
-      const toSave = JSON.stringify({ open, messages });
+      const limitedMessages = messages.slice(-20); // Keep last 20 messages
+      const toSave = JSON.stringify({ open, messages: limitedMessages });
       localStorage.setItem(storageKey, toSave);
     } catch (_) {
       // ignore
     }
   }, [open, messages, storageKey]);
+
+  const clearHistory = () => {
+    if (window.confirm('Clear all chat history? This cannot be undone.')) {
+      setMessages([{ role: 'assistant', content: 'Hi! Ask me anything about your weights, goals, streaks, or trends. I will answer using your data.' }]);
+      try {
+        localStorage.removeItem(storageKey);
+      } catch (_) { /* ignore */ }
+    }
+  };
 
   const onInputResize = (e) => {
     const el = e?.target || textareaRef.current;
@@ -181,9 +191,18 @@ function ChatWidget() {
       {/* Panel */}
       {open && (
         <div className="fixed bottom-24 right-6 z-40 w-[420px] max-w-[92vw] bg-white/90 backdrop-blur border border-gray-200 rounded-2xl shadow-2xl flex flex-col overflow-hidden">
-          <div className="flex items-center gap-2 px-4 py-3 bg-gradient-to-r from-primary-600 to-indigo-600 text-white">
-            <Bot size={18} className="opacity-90" />
-            <div className="font-semibold">Agent Chat</div>
+          <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-primary-600 to-indigo-600 text-white">
+            <div className="flex items-center gap-2">
+              <Bot size={18} className="opacity-90" />
+              <div className="font-semibold">Agent Chat</div>
+            </div>
+            <button
+              onClick={clearHistory}
+              className="p-1.5 rounded-lg hover:bg-white/20 transition-colors"
+              title="Clear chat history"
+            >
+              <Trash2 size={16} />
+            </button>
           </div>
           <div ref={messagesRef} className="p-3 space-y-3 overflow-auto" style={{ maxHeight: '55vh' }}>
             {messages.map((m, i) => (

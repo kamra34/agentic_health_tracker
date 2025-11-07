@@ -383,10 +383,13 @@ function Dashboard() {
       {/* Trend Chart with Metric + Time Window Selector */}
       {chartData.length > 0 && (
         <div className="card">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-3">
-              <h2 className="text-xl font-bold text-gray-800">Trend</h2>
-              <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
+          <div className="flex flex-col gap-4 mb-4">
+            <h2 className="text-xl font-bold text-gray-800">Trend</h2>
+
+            {/* Metric Selector */}
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-sm text-gray-600 hidden sm:inline">Metric:</span>
+              <div className="flex gap-1 bg-gray-100 rounded-lg p-1 flex-wrap">
                 {[
                   { key: 'weight', label: 'Weight' },
                   { key: 'bmi', label: 'BMI' },
@@ -396,57 +399,62 @@ function Dashboard() {
                   <button
                     key={opt.key}
                     onClick={() => setMetric(opt.key)}
-                    className={`px-3 py-1 text-sm rounded-md ${metric === opt.key ? 'bg-white shadow text-gray-800' : 'text-gray-600 hover:text-gray-800'}`}
+                    className={`px-2 sm:px-3 py-1 text-xs sm:text-sm rounded-md ${metric === opt.key ? 'bg-white shadow text-gray-800' : 'text-gray-600 hover:text-gray-800'}`}
                   >
                     {opt.label}
                   </button>
                 ))}
               </div>
             </div>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setTimeWindow('week')}
-                className={`px-3 py-1 text-sm rounded-lg transition-colors ${
-                  timeWindow === 'week'
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`}
-              >
-                Week
-              </button>
-              <button
-                onClick={() => setTimeWindow('month')}
-                className={`px-3 py-1 text-sm rounded-lg transition-colors ${
-                  timeWindow === 'month'
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`}
-              >
-                Month
-              </button>
-              <button
-                onClick={() => setTimeWindow('6months')}
-                className={`px-3 py-1 text-sm rounded-lg transition-colors ${
-                  timeWindow === '6months'
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`}
-              >
-                6 Months
-              </button>
-              <button
-                onClick={() => setTimeWindow('all')}
-                className={`px-3 py-1 text-sm rounded-lg transition-colors ${
-                  timeWindow === 'all'
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`}
-              >
-                All
-              </button>
+
+            {/* Time Window Selector */}
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-sm text-gray-600 hidden sm:inline">Period:</span>
+              <div className="flex gap-2 flex-wrap">
+                <button
+                  onClick={() => setTimeWindow('week')}
+                  className={`px-2 sm:px-3 py-1 text-xs sm:text-sm rounded-lg transition-colors ${
+                    timeWindow === 'week'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  Week
+                </button>
+                <button
+                  onClick={() => setTimeWindow('month')}
+                  className={`px-2 sm:px-3 py-1 text-xs sm:text-sm rounded-lg transition-colors ${
+                    timeWindow === 'month'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  Month
+                </button>
+                <button
+                  onClick={() => setTimeWindow('6months')}
+                  className={`px-2 sm:px-3 py-1 text-xs sm:text-sm rounded-lg transition-colors ${
+                    timeWindow === '6months'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  6 Months
+                </button>
+                <button
+                  onClick={() => setTimeWindow('all')}
+                  className={`px-2 sm:px-3 py-1 text-xs sm:text-sm rounded-lg transition-colors ${
+                    timeWindow === 'all'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  All
+                </button>
+              </div>
             </div>
           </div>
-          <ResponsiveContainer width="100%" height={350}>
+          <ResponsiveContainer width="100%" height={300} className="sm:!h-[350px]">
             <LineChart data={chartData} margin={{ top: 5, right: 30, left: 0, bottom: 20 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
               <XAxis 

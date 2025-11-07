@@ -280,7 +280,68 @@ function WeightEntry() {
         </div>
       ) : (
         <div className="card">
-          <div className="overflow-x-auto">
+          {/* Mobile Card View */}
+          <div className="block md:hidden space-y-4">
+            {weights?.map((weight) => (
+              <div
+                key={weight.id}
+                className="p-4 bg-gray-50 rounded-lg border border-gray-200"
+              >
+                <div className="flex items-start justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <Calendar size={16} className="text-gray-400" />
+                    <span className="font-semibold text-gray-800">
+                      {format(new Date(weight.date_of_measurement), 'MMM dd, yyyy')}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => handleEdit(weight)}
+                      className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                      title="Edit"
+                    >
+                      <Edit2 size={18} />
+                    </button>
+                    <button
+                      onClick={() => handleDelete(weight.id)}
+                      className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                      title="Delete"
+                      disabled={deleteMutation.isPending}
+                    >
+                      <Trash2 size={18} />
+                    </button>
+                  </div>
+                </div>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Weight</span>
+                    <span className="text-primary-600 font-semibold">{weight.weight} kg</span>
+                  </div>
+                  {weight.body_fat_percentage && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Body Fat %</span>
+                      <span className="text-gray-800">{weight.body_fat_percentage}%</span>
+                    </div>
+                  )}
+                  {weight.muscle_mass && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Muscle Mass</span>
+                      <span className="text-gray-800">{weight.muscle_mass} kg</span>
+                    </div>
+                  )}
+                  {weight.notes && (
+                    <div className="pt-2 border-t border-gray-300">
+                      <span className="text-gray-600">Notes: </span>
+                      <span className="text-gray-800">{weight.notes}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Desktop Table View */}
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-gray-200">

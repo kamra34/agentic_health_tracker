@@ -46,6 +46,9 @@ class Settings(BaseSettings):
     email_from: Optional[str] = None  # Email address to send from (must be verified in Brevo)
     email_from_name: str = "Weight Tracker"
 
+    # Frontend URL (for password reset links)
+    frontend_url: str = "https://agentic-health-tracker.vercel.app"
+
     # Pagination
     default_page_size: int = 20
     max_page_size: int = 100

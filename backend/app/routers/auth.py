@@ -5,6 +5,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 import logging
+import secrets
+from datetime import datetime, timedelta
 
 from ..database import get_db
 from .. import models, schemas
@@ -14,7 +16,12 @@ from ..auth import (
     get_password_hash,
     get_current_user
 )
-from ..email_utils import send_username_recovery_email, send_password_reset_confirmation_email
+from ..email_utils import (
+    send_username_recovery_email,
+    send_password_reset_confirmation_email,
+    send_password_reset_link_email
+)
+from ..config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -143,18 +150,92 @@ def forgot_password(
     db: Session = Depends(get_db)
 ):
     """
-    Initiate password reset for a user by email.
-
-    Note: In production, this should send a reset link via email.
-    For now, it returns a success message if the email exists.
+    Initiate password reset by sending a time-limited reset link via email.
+    Always returns success to prevent email enumeration attacks.
     """
     user = db.query(models.User).filter(models.User.email == request.email).first()
 
-    # Always return success to prevent email enumeration
-    # In production, send email with reset token here
+    # Always return success message to prevent email enumeration
+    if not user:
+        logger.info(f"Password reset requested for non-existent email: {request.email}")
+        return {
+            "message": "If an account exists with this email, a password reset link has been sent."
+        }
+
+    # Generate secure random token
+    reset_token = secrets.token_urlsafe(32)
+
+    # Set expiration time (15 minutes from now)
+    expires_at = datetime.utcnow() + timedelta(minutes=15)
+
+    # Invalidate any existing unused tokens for this user
+    db.query(models.PasswordResetToken).filter(
+        models.PasswordResetToken.user_id == user.id,
+        models.PasswordResetToken.used == False
+    ).update({"used": True})
+
+    # Create new reset token
+    token_record = models.PasswordResetToken(
+        user_id=user.id,
+        token=reset_token,
+        expires_at=expires_at
+    )
+    db.add(token_record)
+    db.commit()
+
+    # Build reset URL (frontend URL)
+    # Get frontend URL from environment or use default
+    frontend_url = getattr(settings, 'frontend_url', 'https://agentic-health-tracker.vercel.app')
+    reset_url = f"{frontend_url}/reset-password?token={reset_token}"
+
+    # Send reset link email
+    email_sent = send_password_reset_link_email(request.email, reset_url)
+
+    if not email_sent:
+        logger.warning(f"Failed to send password reset email to {request.email}")
+        # Still return success to prevent enumeration
+
     return {
-        "message": "If an account exists with this email, a password reset link will be sent.",
-        "email_exists": bool(user)  # Remove this in production
+        "message": "If an account exists with this email, a password reset link has been sent."
+    }
+
+
+@router.post("/verify-reset-token", status_code=status.HTTP_200_OK)
+def verify_reset_token(
+    request: schemas.VerifyResetTokenRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Verify if a password reset token is valid and not expired.
+    Used by frontend to check token before showing password form.
+    """
+    token_record = db.query(models.PasswordResetToken).filter(
+        models.PasswordResetToken.token == request.token
+    ).first()
+
+    if not token_record:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired reset token"
+        )
+
+    # Check if token is expired
+    if datetime.utcnow() > token_record.expires_at:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Reset token has expired. Please request a new password reset link."
+        )
+
+    # Check if token was already used
+    if token_record.used:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Reset token has already been used. Please request a new password reset link."
+        )
+
+    return {
+        "valid": True,
+        "message": "Token is valid"
     }
 
 
@@ -164,36 +245,75 @@ def reset_password(
     db: Session = Depends(get_db)
 ):
     """
-    Reset password using email verification.
-
-    Note: In production, this should require a reset token from email.
-    For now, it allows direct password reset with email (simplified for MVP).
+    Reset password using secure token from email link.
+    Validates token, checks expiration, and updates password.
     """
-    user = db.query(models.User).filter(models.User.email == request.email).first()
-
-    if not user:
+    # Validate passwords match
+    if request.new_password != request.confirm_password:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="No account found with this email"
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Passwords do not match"
         )
 
-    # Validate new password
+    # Validate password length
     if len(request.new_password) < 4:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Password must be at least 4 characters"
         )
 
+    # Find token
+    token_record = db.query(models.PasswordResetToken).filter(
+        models.PasswordResetToken.token == request.token
+    ).first()
+
+    if not token_record:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired reset token"
+        )
+
+    # Check if token is expired
+    if datetime.utcnow() > token_record.expires_at:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Reset token has expired. Please request a new password reset link."
+        )
+
+    # Check if token was already used
+    if token_record.used:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Reset token has already been used. Please request a new password reset link."
+        )
+
+    # Get user
+    user = db.query(models.User).filter(models.User.id == token_record.user_id).first()
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+
     # Update password
     user.password_hash = get_password_hash(request.new_password)
+
+    # Mark token as used
+    token_record.used = True
+
     db.commit()
 
     # Send confirmation email
-    email_sent = send_password_reset_confirmation_email(request.email, user.name)
-    if not email_sent:
-        logger.warning(f"Failed to send password reset confirmation email to {request.email}")
+    if user.email:
+        email_sent = send_password_reset_confirmation_email(user.email, user.name)
+        if not email_sent:
+            logger.warning(f"Failed to send password reset confirmation email to {user.email}")
 
-    return {"message": "Password reset successfully. You can now log in with your new password."}
+    return {
+        "message": "Password reset successfully. You can now log in with your new password.",
+        "username": user.name
+    }
 
 
 @router.post("/forgot-username", status_code=status.HTTP_200_OK)

@@ -26,14 +26,20 @@ class UserCreate(UserBase):
 
 
 class ForgotPasswordRequest(BaseModel):
-    """Schema for forgot password request."""
+    """Schema for requesting password reset link."""
     email: str = Field(..., min_length=3, max_length=100)
 
 
 class ResetPasswordRequest(BaseModel):
-    """Schema for password reset."""
-    email: str = Field(..., min_length=3, max_length=100)
+    """Schema for resetting password with token."""
+    token: str = Field(..., min_length=10, max_length=100)
     new_password: str = Field(..., min_length=4, max_length=100)
+    confirm_password: str = Field(..., min_length=4, max_length=100)
+
+
+class VerifyResetTokenRequest(BaseModel):
+    """Schema for verifying reset token validity."""
+    token: str = Field(..., min_length=10, max_length=100)
 
 
 class ForgotUsernameRequest(BaseModel):

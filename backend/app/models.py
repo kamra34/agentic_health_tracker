@@ -10,7 +10,7 @@ from .database import Base
 class User(Base):
     """User model matching the 'users' table."""
     __tablename__ = "users"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(50), nullable=False)
     email = Column(String(100), unique=True)  # optional
@@ -21,13 +21,32 @@ class User(Base):
     is_admin = Column(Boolean, default=False)
     date_of_birth = Column(Date)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    
+
     # Relationships
     weights = relationship("Weight", back_populates="user", cascade="all, delete-orphan")
     targets = relationship("TargetWeight", back_populates="user", cascade="all, delete-orphan")
-    
+    reset_tokens = relationship("PasswordResetToken", back_populates="user", cascade="all, delete-orphan")
+
     def __repr__(self):
         return f"<User(id={self.id}, name={self.name})>"
+
+
+class PasswordResetToken(Base):
+    """Password reset token model for secure password reset flow."""
+    __tablename__ = "password_reset_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    token = Column(String(100), unique=True, nullable=False, index=True)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    used = Column(Boolean, default=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    # Relationships
+    user = relationship("User", back_populates="reset_tokens")
+
+    def __repr__(self):
+        return f"<PasswordResetToken(id={self.id}, user_id={self.user_id}, used={self.used})>"
 
 
 class Weight(Base):

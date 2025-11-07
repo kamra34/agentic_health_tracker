@@ -142,6 +142,70 @@ def send_username_recovery_email(to_email: str, username: str) -> bool:
     return send_email(to_email, subject, body_html, body_text)
 
 
+def send_password_reset_link_email(to_email: str, reset_url: str) -> bool:
+    """
+    Send password reset link email.
+
+    Args:
+        to_email: User's email address
+        reset_url: Full URL with reset token
+
+    Returns:
+        True if email sent successfully, False otherwise
+    """
+    subject = "Reset Your Weight Tracker Password"
+
+    body_html = f"""
+    <html>
+        <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+            <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; border-radius: 10px 10px 0 0;">
+                <h1 style="color: white; margin: 0;">Weight Tracker</h1>
+            </div>
+            <div style="background: #f8f9fa; padding: 30px; border-radius: 0 0 10px 10px;">
+                <h2 style="color: #333; margin-top: 0;">Password Reset Request</h2>
+                <p style="color: #666; font-size: 16px; line-height: 1.6;">
+                    You requested to reset your password for your Weight Tracker account.
+                </p>
+                <p style="color: #666; font-size: 16px; line-height: 1.6;">
+                    Click the button below to reset your password. This link will expire in 15 minutes.
+                </p>
+                <div style="text-align: center; margin: 30px 0;">
+                    <a href="{reset_url}" style="display: inline-block; padding: 15px 40px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 16px;">
+                        Reset Password
+                    </a>
+                </div>
+                <p style="color: #999; font-size: 14px; line-height: 1.6;">
+                    Or copy and paste this link into your browser:
+                </p>
+                <p style="color: #667eea; font-size: 12px; word-break: break-all; background: white; padding: 10px; border-radius: 4px; border: 1px solid #ddd;">
+                    {reset_url}
+                </p>
+                <hr style="border: none; border-top: 1px solid #ddd; margin: 30px 0;">
+                <p style="color: #999; font-size: 12px; line-height: 1.6;">
+                    If you didn't request this password reset, please ignore this email. Your password will not be changed.
+                </p>
+                <p style="color: #999; font-size: 12px; line-height: 1.6;">
+                    For security reasons, this link will expire in 15 minutes.
+                </p>
+            </div>
+        </body>
+    </html>
+    """
+
+    body_text = f"""
+    Weight Tracker - Password Reset Request
+
+    You requested to reset your password for your Weight Tracker account.
+
+    Click the link below to reset your password (expires in 15 minutes):
+    {reset_url}
+
+    If you didn't request this password reset, please ignore this email.
+    """
+
+    return send_email(to_email, subject, body_html, body_text)
+
+
 def send_password_reset_confirmation_email(to_email: str, username: str) -> bool:
     """
     Send password reset confirmation email.

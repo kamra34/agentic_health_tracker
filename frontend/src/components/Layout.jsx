@@ -23,14 +23,15 @@ function Layout() {
     <div className="min-h-screen bg-gray-50">
       {/* Mobile Header */}
       <header className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-white border-b border-gray-200 shadow-sm z-30 flex items-center justify-between px-4">
-        <h1 className="text-xl font-bold text-primary-600">Weight Tracker</h1>
         <button
           onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-          className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+          className="p-2 rounded-lg hover:bg-gray-100 transition-colors text-gray-700"
           aria-label="Toggle menu"
         >
-          {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
+          {isMobileMenuOpen ? <X size={24} className="text-gray-700" /> : <Menu size={24} className="text-gray-700" />}
         </button>
+        <h1 className="text-xl font-bold text-primary-600">Weight Tracker</h1>
+        <div className="w-10"></div> {/* Spacer for centering */}
       </header>
 
       {/* Mobile Menu Overlay */}

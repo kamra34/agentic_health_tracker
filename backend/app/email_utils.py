@@ -33,8 +33,10 @@ def send_email(
     """
     # Check if email is configured
     if not settings.smtp_user or not settings.smtp_password:
-        logger.warning("Email not configured. Set SMTP_USER and SMTP_PASSWORD environment variables.")
+        logger.info(f"Email not configured (SMTP_USER={'set' if settings.smtp_user else 'missing'}, SMTP_PASSWORD={'set' if settings.smtp_password else 'missing'})")
         return False
+
+    logger.info(f"Attempting to send email to {to_email} via {settings.smtp_host}:{settings.smtp_port}")
 
     try:
         # Create message
@@ -52,8 +54,8 @@ def send_email(
         part2 = MIMEText(body_html, 'html')
         msg.attach(part2)
 
-        # Send email
-        with smtplib.SMTP(settings.smtp_host, settings.smtp_port) as server:
+        # Send email with timeout to prevent hanging
+        with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=10) as server:
             server.starttls()  # Secure the connection
             server.login(settings.smtp_user, settings.smtp_password)
             server.send_message(msg)

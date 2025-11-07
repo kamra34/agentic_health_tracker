@@ -22,6 +22,23 @@ class UserBase(BaseModel):
 class UserCreate(UserBase):
     """Schema for user registration."""
     password: str = Field(..., min_length=4, max_length=100)
+    email: str = Field(..., min_length=3, max_length=100)  # Make email required for new users
+
+
+class ForgotPasswordRequest(BaseModel):
+    """Schema for forgot password request."""
+    email: str = Field(..., min_length=3, max_length=100)
+
+
+class ResetPasswordRequest(BaseModel):
+    """Schema for password reset."""
+    email: str = Field(..., min_length=3, max_length=100)
+    new_password: str = Field(..., min_length=4, max_length=100)
+
+
+class ForgotUsernameRequest(BaseModel):
+    """Schema for forgot username request."""
+    email: str = Field(..., min_length=3, max_length=100)
 
 
 class UserUpdate(BaseModel):

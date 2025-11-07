@@ -5,6 +5,7 @@ import useAuthStore from '../stores/authStore';
 function Signup() {
   const [formData, setFormData] = useState({
     name: '',
+    email: '',
     password: '',
     confirmPassword: '',
     height: '',
@@ -29,6 +30,7 @@ function Signup() {
 
     const userData = {
       name: formData.name,
+      email: formData.email,
       password: formData.password,
       height: formData.height ? parseFloat(formData.height) : null,
       sex: formData.sex || null,
@@ -71,6 +73,22 @@ function Signup() {
                 className="input"
                 required
               />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Email *
+              </label>
+              <input
+                type="email"
+                name="email"
+                value={formData.email}
+                onChange={handleChange}
+                className="input"
+                placeholder="your@email.com"
+                required
+              />
+              <p className="text-xs text-gray-500 mt-1">Required for password recovery</p>
             </div>
 
             <div>

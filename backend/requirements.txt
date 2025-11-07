@@ -26,6 +26,7 @@ openai==1.57.0
 
 # Utilities
 python-dateutil==2.9.0
+requests==2.32.3
 
 # Testing (optional for later)
 pytest==8.3.4

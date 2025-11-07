@@ -40,13 +40,10 @@ class Settings(BaseSettings):
     # Optional model id from env (e.g., model_id=gpt-4o)
     model_id: Optional[str] = None
 
-    # Email Configuration (using Gmail SMTP)
-    # For Gmail: use app password (not regular password) - https://support.google.com/accounts/answer/185833
-    smtp_host: str = "smtp.gmail.com"
-    smtp_port: int = 587
-    smtp_user: Optional[str] = None  # Your Gmail address
-    smtp_password: Optional[str] = None  # Your Gmail app password
-    email_from: Optional[str] = None  # Email address to send from (usually same as smtp_user)
+    # Email Configuration (using Brevo HTTP API)
+    # Sign up at https://www.brevo.com/ and get API key from Settings > API Keys
+    brevo_api_key: Optional[str] = None  # Your Brevo API key
+    email_from: Optional[str] = None  # Email address to send from (must be verified in Brevo)
     email_from_name: str = "Weight Tracker"
 
     # Pagination

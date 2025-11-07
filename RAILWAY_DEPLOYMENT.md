@@ -92,19 +92,22 @@ After your frontend is deployed and you have the Vercel URL:
 
 Email is used for username recovery and password reset confirmations.
 
-See [EMAIL_SETUP.md](EMAIL_SETUP.md) for detailed instructions.
+**Recommended: Brevo (Free, 300 emails/day)**
 
-Quick setup for Gmail:
-1. Generate Gmail app password
-2. Add to Railway environment variables:
-   ```
-   SMTP_USER=your-email@gmail.com
-   SMTP_PASSWORD=your-app-password
-   EMAIL_FROM=your-email@gmail.com
-   ```
-3. Service will automatically redeploy
+See [BREVO_SETUP.md](BREVO_SETUP.md) for detailed step-by-step instructions.
 
-**Note**: If email is not configured, username recovery will still work but display the username in the response instead of sending it via email.
+Quick setup:
+1. Sign up at https://www.brevo.com/
+2. Get API key from Settings → API Keys
+3. Verify your sender email
+4. Add to Railway environment variables:
+   ```
+   BREVO_API_KEY=xkeysib-your-api-key-here
+   EMAIL_FROM=your-verified-email@domain.com
+   ```
+5. Service will automatically redeploy
+
+**Note**: If email is not configured, the system will use a fallback that displays the username/confirmation message directly in the response. This ensures the feature always works, even without email setup.
 
 ### 7. Test Your App!
 

@@ -1,10 +1,8 @@
 """
-Email utility functions for sending emails via SMTP.
-Supports Gmail and other SMTP providers.
+Email utility functions for sending emails via Brevo HTTP API.
+Uses HTTP API instead of SMTP to avoid firewall/port blocking issues.
 """
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
+import requests
 from typing import Optional
 import logging
 
@@ -20,48 +18,67 @@ def send_email(
     body_text: Optional[str] = None
 ) -> bool:
     """
-    Send an email using configured SMTP settings.
+    Send an email using Brevo HTTP API.
 
     Args:
         to_email: Recipient email address
         subject: Email subject line
         body_html: HTML content of the email
-        body_text: Plain text alternative (optional, auto-generated from HTML if not provided)
+        body_text: Plain text alternative (optional)
 
     Returns:
         True if email sent successfully, False otherwise
     """
-    # Check if email is configured
-    if not settings.smtp_user or not settings.smtp_password:
-        logger.info(f"Email not configured (SMTP_USER={'set' if settings.smtp_user else 'missing'}, SMTP_PASSWORD={'set' if settings.smtp_password else 'missing'})")
+    # Check if Brevo is configured
+    if not settings.brevo_api_key:
+        logger.info("Brevo not configured. Set BREVO_API_KEY environment variable.")
         return False
 
-    logger.info(f"Attempting to send email to {to_email} via {settings.smtp_host}:{settings.smtp_port}")
+    if not settings.email_from:
+        logger.warning("EMAIL_FROM not set. Please configure sender email address.")
+        return False
+
+    logger.info(f"Attempting to send email to {to_email} via Brevo API")
+
+    # Brevo API endpoint
+    url = "https://api.brevo.com/v3/smtp/email"
+
+    # Request headers
+    headers = {
+        "accept": "application/json",
+        "api-key": settings.brevo_api_key,
+        "content-type": "application/json"
+    }
+
+    # Email payload
+    payload = {
+        "sender": {
+            "name": settings.email_from_name,
+            "email": settings.email_from
+        },
+        "to": [
+            {
+                "email": to_email,
+                "name": to_email.split('@')[0]  # Use email username as display name
+            }
+        ],
+        "subject": subject,
+        "htmlContent": body_html
+    }
+
+    # Add text content if provided
+    if body_text:
+        payload["textContent"] = body_text
 
     try:
-        # Create message
-        msg = MIMEMultipart('alternative')
-        msg['Subject'] = subject
-        msg['From'] = f"{settings.email_from_name} <{settings.email_from or settings.smtp_user}>"
-        msg['To'] = to_email
+        response = requests.post(url, json=payload, headers=headers, timeout=10)
 
-        # Attach plain text version (fallback)
-        if body_text:
-            part1 = MIMEText(body_text, 'plain')
-            msg.attach(part1)
-
-        # Attach HTML version
-        part2 = MIMEText(body_html, 'html')
-        msg.attach(part2)
-
-        # Send email with timeout to prevent hanging
-        with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=10) as server:
-            server.starttls()  # Secure the connection
-            server.login(settings.smtp_user, settings.smtp_password)
-            server.send_message(msg)
-
-        logger.info(f"Email sent successfully to {to_email}")
-        return True
+        if response.status_code == 201:
+            logger.info(f"Email sent successfully to {to_email} via Brevo")
+            return True
+        else:
+            logger.error(f"Brevo API error: {response.status_code} - {response.text}")
+            return False
 
     except Exception as e:
         logger.error(f"Failed to send email to {to_email}: {str(e)}")

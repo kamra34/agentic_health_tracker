@@ -14,7 +14,8 @@ from ..auth import (
     authenticate_user,
     create_access_token,
     get_password_hash,
-    get_current_user
+    get_current_user,
+    verify_password
 )
 from ..email_utils import (
     send_username_recovery_email,
@@ -109,7 +110,6 @@ def login(
     logger.info(f"Attempting password: {form_data.password}")
 
     # Verify password
-    from .auth import verify_password
     password_valid = verify_password(form_data.password, user.password_hash)
     logger.info(f"Password verification result: {password_valid}")
 
@@ -143,8 +143,6 @@ def change_password(
     """
     Change current user's password.
     """
-    from ..auth import verify_password
-    
     # Verify old password
     if not verify_password(old_password, current_user.password_hash):
         raise HTTPException(

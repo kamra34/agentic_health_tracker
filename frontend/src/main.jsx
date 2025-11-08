@@ -6,7 +6,7 @@ import App from './App.jsx'
 import './styles/index.css'
 
 // Create a React Query client
-const queryClient = new QueryClient({
+export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       refetchOnWindowFocus: false,

@@ -203,11 +203,11 @@ function ResetPassword() {
                 onChange={(e) => setNewPassword(e.target.value)}
                 className="input"
                 placeholder="Enter new password"
-                minLength={4}
+                minLength={8}
                 required
                 disabled={loading || message.type === 'success'}
               />
-              <p className="text-xs text-gray-500 mt-1">Minimum 4 characters</p>
+              <p className="text-xs text-gray-500 mt-1">Minimum 8 characters</p>
             </div>
 
             <div>
@@ -220,7 +220,7 @@ function ResetPassword() {
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 className="input"
                 placeholder="Confirm new password"
-                minLength={4}
+                minLength={8}
                 required
                 disabled={loading || message.type === 'success'}
               />

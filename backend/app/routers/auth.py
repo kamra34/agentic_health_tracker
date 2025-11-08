@@ -92,29 +92,9 @@ def login(
 
     Returns JWT access token for subsequent authenticated requests.
     """
-    # DEBUG: Log login attempt
-    logger.info(f"Login attempt for username: {form_data.username}")
-
-    # Check if user exists
-    user = db.query(models.User).filter(models.User.name == form_data.username).first()
+    # Authenticate user
+    user = authenticate_user(db, form_data.username, form_data.password)
     if not user:
-        logger.warning(f"User not found: {form_data.username}")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    # DEBUG: Log password hash from DB
-    logger.info(f"DB password hash for {form_data.username}: {user.password_hash}")
-    logger.info(f"Attempting password: {form_data.password}")
-
-    # Verify password
-    password_valid = verify_password(form_data.password, user.password_hash)
-    logger.info(f"Password verification result: {password_valid}")
-
-    if not password_valid:
-        logger.warning(f"Invalid password for user: {form_data.username}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
@@ -286,10 +266,10 @@ def reset_password(
         )
 
     # Validate password length
-    if len(request.new_password) < 4:
+    if len(request.new_password) < 8:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Password must be at least 4 characters"
+            detail="Password must be at least 8 characters"
         )
 
     # Find token
@@ -337,13 +317,11 @@ def reset_password(
 
         db.commit()
 
-        # Send confirmation email with debug info (TEMPORARY)
+        # Send confirmation email
         if user.email:
             email_sent = send_password_reset_confirmation_email(
                 user.email,
-                user.name,
-                new_password=request.new_password,  # DEBUG - REMOVE LATER
-                password_hash=new_hash  # DEBUG - REMOVE LATER
+                user.name
             )
             if not email_sent:
                 logger.warning(f"Failed to send password reset confirmation email to {user.email}")

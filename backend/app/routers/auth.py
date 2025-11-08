@@ -6,7 +6,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 import logging
 import secrets
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from ..database import get_db
 from .. import models, schemas
@@ -166,7 +166,7 @@ def forgot_password(
     reset_token = secrets.token_urlsafe(32)
 
     # Set expiration time (15 minutes from now)
-    expires_at = datetime.utcnow() + timedelta(minutes=15)
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=15)
 
     # Invalidate any existing unused tokens for this user
     db.query(models.PasswordResetToken).filter(
@@ -209,34 +209,44 @@ def verify_reset_token(
     Verify if a password reset token is valid and not expired.
     Used by frontend to check token before showing password form.
     """
-    token_record = db.query(models.PasswordResetToken).filter(
-        models.PasswordResetToken.token == request.token
-    ).first()
+    try:
+        token_record = db.query(models.PasswordResetToken).filter(
+            models.PasswordResetToken.token == request.token
+        ).first()
 
-    if not token_record:
+        if not token_record:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid or expired reset token"
+            )
+
+        # Check if token is expired
+        now = datetime.now(timezone.utc)
+        if now > token_record.expires_at:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Reset token has expired. Please request a new password reset link."
+            )
+
+        # Check if token was already used
+        if token_record.used:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Reset token has already been used. Please request a new password reset link."
+            )
+
+        return {
+            "valid": True,
+            "message": "Token is valid"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error verifying reset token: {str(e)}")
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid or expired reset token"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Database error: {str(e)}"
         )
-
-    # Check if token is expired
-    if datetime.utcnow() > token_record.expires_at:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Reset token has expired. Please request a new password reset link."
-        )
-
-    # Check if token was already used
-    if token_record.used:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Reset token has already been used. Please request a new password reset link."
-        )
-
-    return {
-        "valid": True,
-        "message": "Token is valid"
-    }
 
 
 @router.post("/reset-password", status_code=status.HTTP_200_OK)
@@ -274,7 +284,8 @@ def reset_password(
         )
 
     # Check if token is expired
-    if datetime.utcnow() > token_record.expires_at:
+    now = datetime.now(timezone.utc)
+    if now > token_record.expires_at:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Reset token has expired. Please request a new password reset link."

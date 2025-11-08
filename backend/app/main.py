@@ -22,6 +22,22 @@ async def lifespan(app: FastAPI):
     """Application lifespan events."""
     # Startup
     Base.metadata.create_all(bind=engine)
+
+    # Run migration to add updated_at column if it doesn't exist
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        try:
+            # Add updated_at column if it doesn't exist
+            conn.execute(text("""
+                ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;
+            """))
+            conn.execute(text("""
+                UPDATE users SET updated_at = created_at WHERE updated_at IS NULL;
+            """))
+            conn.commit()
+        except Exception as e:
+            print(f"Migration note: {e}")
+
     yield
     # Shutdown (if needed)
 

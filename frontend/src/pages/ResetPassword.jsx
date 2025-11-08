@@ -19,6 +19,8 @@ function ResetPassword() {
   // Verify token on mount
   useEffect(() => {
     const verifyToken = async () => {
+      console.log('Verifying token:', token); // Debug log
+
       if (!token) {
         setMessage({ type: 'error', text: 'Invalid reset link. Token is missing.' });
         setVerifying(false);
@@ -26,10 +28,12 @@ function ResetPassword() {
       }
 
       try {
-        await authAPI.verifyResetToken(token);
+        const response = await authAPI.verifyResetToken(token);
+        console.log('Token verification response:', response.data); // Debug log
         setTokenValid(true);
         setVerifying(false);
       } catch (error) {
+        console.error('Token verification error:', error.response?.data || error); // Debug log
         setMessage({
           type: 'error',
           text: error.response?.data?.detail || 'Invalid or expired reset link.'
@@ -106,7 +110,15 @@ function ResetPassword() {
             <div className="text-center">
               <AlertCircle className="w-16 h-16 mx-auto mb-4 text-red-500" />
               <h2 className="text-xl font-bold text-gray-800 mb-2">Invalid Reset Link</h2>
-              <p className="text-gray-600 mb-6">{message.text}</p>
+              <p className="text-gray-600 mb-4">{message.text}</p>
+
+              {/* Debug info */}
+              <div className="text-left bg-gray-50 p-3 rounded text-xs mb-4">
+                <p className="text-gray-600 mb-1">Debug Info:</p>
+                <p className="text-gray-800 break-all">Token: {token || 'null'}</p>
+                <p className="text-gray-800">Token length: {token ? token.length : 0}</p>
+              </div>
+
               <Link
                 to="/forgot-password"
                 className="btn btn-primary inline-flex items-center gap-2"

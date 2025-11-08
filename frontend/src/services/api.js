@@ -53,7 +53,9 @@ export const authAPI = {
       params: { old_password: oldPassword, new_password: newPassword }
     }),
   forgotPassword: (email) => api.post('/api/auth/forgot-password', { email }),
-  resetPassword: (email, newPassword) => api.post('/api/auth/reset-password', { email, new_password: newPassword }),
+  verifyResetToken: (token) => api.post('/api/auth/verify-reset-token', { token }),
+  resetPasswordWithToken: (token, newPassword, confirmPassword) =>
+    api.post('/api/auth/reset-password', { token, new_password: newPassword, confirm_password: confirmPassword }),
   forgotUsername: (email) => api.post('/api/auth/forgot-username', { email }),
 };
 

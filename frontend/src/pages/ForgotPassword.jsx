@@ -6,7 +6,6 @@ import { KeyRound, User as UserIcon, ArrowLeft } from 'lucide-react';
 function ForgotPassword() {
   const [activeTab, setActiveTab] = useState('password'); // 'password' or 'username'
   const [email, setEmail] = useState('');
-  const [newPassword, setNewPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' }); // type: 'success' or 'error'
 
@@ -16,14 +15,16 @@ function ForgotPassword() {
     setMessage({ type: '', text: '' });
 
     try {
-      const response = await authAPI.resetPassword(email, newPassword);
-      setMessage({ type: 'success', text: response.data.message });
+      const response = await authAPI.forgotPassword(email);
+      setMessage({
+        type: 'success',
+        text: response.data.message || 'If an account exists with this email, a password reset link has been sent.'
+      });
       setEmail('');
-      setNewPassword('');
     } catch (error) {
       setMessage({
         type: 'error',
-        text: error.response?.data?.detail || 'Failed to reset password'
+        text: error.response?.data?.detail || 'Failed to send reset link'
       });
     } finally {
       setLoading(false);
@@ -138,22 +139,9 @@ function ForgotPassword() {
                   placeholder="your@email.com"
                   required
                 />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  New Password
-                </label>
-                <input
-                  type="password"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  className="input"
-                  placeholder="Enter new password"
-                  minLength={4}
-                  required
-                />
-                <p className="text-xs text-gray-500 mt-1">Minimum 4 characters</p>
+                <p className="text-xs text-gray-500 mt-1">
+                  A secure password reset link will be sent to this email address
+                </p>
               </div>
 
               <button
@@ -161,12 +149,11 @@ function ForgotPassword() {
                 disabled={loading}
                 className="btn btn-primary w-full py-3 text-lg"
               >
-                {loading ? 'Resetting...' : 'Reset Password'}
+                {loading ? 'Sending...' : 'Send Reset Link'}
               </button>
 
               <p className="text-xs text-gray-500 mt-4">
-                Note: This is a simplified recovery process for MVP. In production, you would
-                receive a secure reset link via email.
+                The reset link will expire in 15 minutes for security reasons.
               </p>
             </form>
           )}

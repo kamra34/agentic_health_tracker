@@ -6,6 +6,7 @@ import useAuthStore from './stores/authStore';
 import Login from './pages/Login';
 import Signup from './pages/Signup';
 import ForgotPassword from './pages/ForgotPassword';
+import ResetPassword from './pages/ResetPassword';
 import Dashboard from './pages/Dashboard';
 import WeightEntry from './pages/WeightEntry';
 import TargetEntry from './pages/TargetEntry';
@@ -47,6 +48,10 @@ function App() {
       <Route
         path="/forgot-password"
         element={isAuthenticated ? <Navigate to="/dashboard" /> : <ForgotPassword />}
+      />
+      <Route
+        path="/reset-password"
+        element={isAuthenticated ? <Navigate to="/dashboard" /> : <ResetPassword />}
       />
 
       {/* Protected routes */}

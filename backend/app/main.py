@@ -12,6 +12,8 @@ from .routers import auth, users, weights, targets, admin
 from .routers import insights
 from .routers import chat_v2
 from .routers import chat
+# Import models to ensure they're registered with SQLAlchemy before create_all
+from . import models  # noqa: F401
 
 
 # Create database tables on startup

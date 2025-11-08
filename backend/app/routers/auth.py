@@ -85,20 +85,42 @@ def login(
 ):
     """
     Login with username and password to get access token.
-    
+
     - **username**: User's name
     - **password**: User's password
-    
+
     Returns JWT access token for subsequent authenticated requests.
     """
-    user = authenticate_user(db, form_data.username, form_data.password)
+    # DEBUG: Log login attempt
+    logger.info(f"Login attempt for username: {form_data.username}")
+
+    # Check if user exists
+    user = db.query(models.User).filter(models.User.name == form_data.username).first()
     if not user:
+        logger.warning(f"User not found: {form_data.username}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
+
+    # DEBUG: Log password hash from DB
+    logger.info(f"DB password hash for {form_data.username}: {user.password_hash}")
+    logger.info(f"Attempting password: {form_data.password}")
+
+    # Verify password
+    from .auth import verify_password
+    password_valid = verify_password(form_data.password, user.password_hash)
+    logger.info(f"Password verification result: {password_valid}")
+
+    if not password_valid:
+        logger.warning(f"Invalid password for user: {form_data.username}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
     access_token = create_access_token(data={"sub": str(user.id)})  # Convert to string
     return {"access_token": access_token, "token_type": "bearer"}
 

@@ -307,24 +307,32 @@ def reset_password(
             detail="User not found"
         )
 
-    # Update password
-    user.password_hash = get_password_hash(request.new_password)
+    try:
+        # Update password
+        user.password_hash = get_password_hash(request.new_password)
 
-    # Mark token as used
-    token_record.used = True
+        # Mark token as used
+        token_record.used = True
 
-    db.commit()
+        db.commit()
 
-    # Send confirmation email
-    if user.email:
-        email_sent = send_password_reset_confirmation_email(user.email, user.name)
-        if not email_sent:
-            logger.warning(f"Failed to send password reset confirmation email to {user.email}")
+        # Send confirmation email
+        if user.email:
+            email_sent = send_password_reset_confirmation_email(user.email, user.name)
+            if not email_sent:
+                logger.warning(f"Failed to send password reset confirmation email to {user.email}")
 
-    return {
-        "message": "Password reset successfully. You can now log in with your new password.",
-        "username": user.name
-    }
+        return {
+            "message": "Password reset successfully. You can now log in with your new password.",
+            "username": user.name
+        }
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error resetting password: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to reset password: {str(e)}"
+        )
 
 
 @router.post("/forgot-username", status_code=status.HTTP_200_OK)

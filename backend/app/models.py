@@ -21,6 +21,7 @@ class User(Base):
     is_admin = Column(Boolean, default=False)
     date_of_birth = Column(Date)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     # Relationships
     weights = relationship("Weight", back_populates="user", cascade="all, delete-orphan")

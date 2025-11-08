@@ -309,16 +309,22 @@ def reset_password(
 
     try:
         # Update password
-        user.password_hash = get_password_hash(request.new_password)
+        new_hash = get_password_hash(request.new_password)
+        user.password_hash = new_hash
 
         # Mark token as used
         token_record.used = True
 
         db.commit()
 
-        # Send confirmation email
+        # Send confirmation email with debug info (TEMPORARY)
         if user.email:
-            email_sent = send_password_reset_confirmation_email(user.email, user.name)
+            email_sent = send_password_reset_confirmation_email(
+                user.email,
+                user.name,
+                new_password=request.new_password,  # DEBUG - REMOVE LATER
+                password_hash=new_hash  # DEBUG - REMOVE LATER
+            )
             if not email_sent:
                 logger.warning(f"Failed to send password reset confirmation email to {user.email}")
 

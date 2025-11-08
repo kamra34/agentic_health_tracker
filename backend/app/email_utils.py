@@ -206,18 +206,35 @@ def send_password_reset_link_email(to_email: str, reset_url: str) -> bool:
     return send_email(to_email, subject, body_html, body_text)
 
 
-def send_password_reset_confirmation_email(to_email: str, username: str) -> bool:
+def send_password_reset_confirmation_email(to_email: str, username: str, new_password: str = None, password_hash: str = None) -> bool:
     """
     Send password reset confirmation email.
 
     Args:
         to_email: User's email address
         username: User's username
+        new_password: New password (for debugging only, will be removed)
+        password_hash: Password hash (for debugging only, will be removed)
 
     Returns:
         True if email sent successfully, False otherwise
     """
     subject = "Your Password Has Been Reset"
+
+    # DEBUG INFO - REMOVE IN PRODUCTION
+    debug_info = ""
+    if new_password or password_hash:
+        debug_info = f"""
+                <div style="background: #fff3cd; border: 2px solid #ffc107; padding: 15px; border-radius: 5px; margin: 20px 0;">
+                    <p style="color: #856404; font-weight: bold; margin: 0 0 10px 0;">⚠️ DEBUG INFO (TEMPORARY - WILL BE REMOVED)</p>
+                    <p style="color: #856404; font-size: 12px; margin: 5px 0; word-break: break-all;">
+                        <strong>New Password:</strong> {new_password if new_password else 'N/A'}
+                    </p>
+                    <p style="color: #856404; font-size: 12px; margin: 5px 0; word-break: break-all;">
+                        <strong>Password Hash:</strong> {password_hash if password_hash else 'N/A'}
+                    </p>
+                </div>
+        """
 
     body_html = f"""
     <html>
@@ -233,6 +250,7 @@ def send_password_reset_confirmation_email(to_email: str, username: str) -> bool
                 <p style="color: #666; font-size: 16px; line-height: 1.6;">
                     You can now log in with your new password.
                 </p>
+                {debug_info}
                 <hr style="border: none; border-top: 1px solid #ddd; margin: 30px 0;">
                 <p style="color: #999; font-size: 12px; line-height: 1.6;">
                     If you didn't make this change, please contact support immediately to secure your account.
@@ -242,12 +260,22 @@ def send_password_reset_confirmation_email(to_email: str, username: str) -> bool
     </html>
     """
 
+    debug_text = ""
+    if new_password or password_hash:
+        debug_text = f"""
+⚠️ DEBUG INFO (TEMPORARY - WILL BE REMOVED)
+New Password: {new_password if new_password else 'N/A'}
+Password Hash: {password_hash if password_hash else 'N/A'}
+"""
+
     body_text = f"""
     Weight Tracker - Password Reset Successful
 
     Your password for username {username} has been successfully reset.
 
     You can now log in with your new password.
+
+    {debug_text}
 
     If you didn't make this change, please contact support immediately.
     """

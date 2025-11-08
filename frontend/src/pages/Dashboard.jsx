@@ -689,8 +689,14 @@ function Dashboard() {
                     </div>
                     <div className="mt-1 text-xs text-gray-600 flex items-center gap-1">
                       <Scale className="w-3.5 h-3.5 text-gray-500" />
-                      <span>To Go:</span>
-                      <span className="font-semibold text-gray-700">{Math.abs(parseFloat(target.weight_to_lose || 0)).toFixed(1)} kg</span>
+                      {parseFloat(target.weight_to_lose || 0) > 0 ? (
+                        <>
+                          <span>To Go:</span>
+                          <span className="font-semibold text-gray-700">{parseFloat(target.weight_to_lose || 0).toFixed(1)} kg</span>
+                        </>
+                      ) : (
+                        <span className="font-semibold text-green-700">Goal achieved!</span>
+                      )}
                     </div>
 
                     {/* Time Progress */}

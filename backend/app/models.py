@@ -73,14 +73,15 @@ class Weight(Base):
 class TargetWeight(Base):
     """Target weight model matching the 'target_weights' table."""
     __tablename__ = "target_weights"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     date_of_target = Column(Date, nullable=False)
     target_weight = Column(Numeric, nullable=False)  # in kg
     created_date = Column(Date, server_default=func.current_date())
     status = Column(String(50), default="active")  # active, completed, cancelled
-    
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
     # Relationships
     user = relationship("User", back_populates="targets")
     

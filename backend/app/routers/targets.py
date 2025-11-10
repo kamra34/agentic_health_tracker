@@ -17,17 +17,17 @@ router = APIRouter(prefix="/api/targets", tags=["Targets"])
 
 def auto_close_expired_targets(db: Session, user_id: int) -> int:
     """
-    Automatically close targets that have passed their due date.
+    Automatically close targets that have reached or passed their due date.
     Determines success/failure based on whether target weight was achieved.
     Returns number of targets closed.
     """
     today = date.today()
 
-    # Find all active targets that are past due
+    # Find all active targets that are due today or past due
     expired_targets = db.query(models.TargetWeight).filter(
         models.TargetWeight.user_id == user_id,
         models.TargetWeight.status == "active",
-        models.TargetWeight.date_of_target < today
+        models.TargetWeight.date_of_target <= today
     ).all()
 
     if not expired_targets:

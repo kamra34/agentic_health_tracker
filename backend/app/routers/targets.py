@@ -15,6 +15,49 @@ from ..auth import get_current_user
 router = APIRouter(prefix="/api/targets", tags=["Targets"])
 
 
+def auto_close_expired_targets(db: Session, user_id: int) -> int:
+    """
+    Automatically close targets that have passed their due date.
+    Determines success/failure based on whether target weight was achieved.
+    Returns number of targets closed.
+    """
+    today = date.today()
+
+    # Find all active targets that are past due
+    expired_targets = db.query(models.TargetWeight).filter(
+        models.TargetWeight.user_id == user_id,
+        models.TargetWeight.status == "active",
+        models.TargetWeight.date_of_target < today
+    ).all()
+
+    if not expired_targets:
+        return 0
+
+    # Get user's latest weight
+    latest_weight = db.query(models.Weight).filter(
+        models.Weight.user_id == user_id
+    ).order_by(desc(models.Weight.date_of_measurement)).first()
+
+    closed_count = 0
+    for target in expired_targets:
+        if latest_weight:
+            current_weight = float(latest_weight.weight)
+            target_weight = float(target.target_weight)
+
+            # Target is successful if current weight is at or below target weight
+            target.status = "completed" if current_weight <= target_weight else "failed"
+        else:
+            # No weight data, mark as failed
+            target.status = "failed"
+
+        closed_count += 1
+
+    if closed_count > 0:
+        db.commit()
+
+    return closed_count
+
+
 @router.post("", response_model=schemas.TargetWeight, status_code=status.HTTP_201_CREATED)
 def create_target(
     target: schemas.TargetWeightCreate,
@@ -42,7 +85,7 @@ def create_target(
 
 
 @router.get("", response_model=List[schemas.TargetWithProgress])
-def list_targets(
+async def list_targets(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
     status_filter: str = None,
@@ -51,11 +94,15 @@ def list_targets(
 ):
     """
     Get all target weights for the current user.
-    
+    Automatically closes expired targets before returning results.
+
     - **skip**: Number of records to skip
     - **limit**: Maximum number of records to return
     - **status_filter**: Filter by status (active, completed, failed, cancelled)
     """
+    # Auto-close expired targets
+    auto_close_expired_targets(db, current_user.id)
+
     query = db.query(models.TargetWeight).filter(
         models.TargetWeight.user_id == current_user.id
     )
@@ -91,18 +138,22 @@ def list_targets(
 
 
 @router.get("/active", response_model=List[schemas.TargetWeight])
-def get_active_targets(
+async def get_active_targets(
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
     Get all active targets for the current user.
+    Automatically closes expired targets before returning results.
     """
+    # Auto-close expired targets
+    auto_close_expired_targets(db, current_user.id)
+
     targets = db.query(models.TargetWeight).filter(
         models.TargetWeight.user_id == current_user.id,
         models.TargetWeight.status == "active"
     ).order_by(models.TargetWeight.date_of_target).all()
-    
+
     return targets
 
 
@@ -196,34 +247,52 @@ def delete_target(
 
 
 @router.post("/{target_id}/complete", response_model=schemas.TargetWeight)
-def complete_target(
+async def complete_target(
     target_id: int,
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
-    Mark a target as completed.
+    Mark a target as completed or failed based on whether the goal was achieved.
+    Automatically determines success/failure by comparing current weight to target weight.
     """
     target = db.query(models.TargetWeight).filter(
         models.TargetWeight.id == target_id,
         models.TargetWeight.user_id == current_user.id
     ).first()
-    
+
     if not target:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Target not found"
         )
-    
-    target.status = "completed"
+
+    # Get current weight to determine success/failure
+    latest_weight = db.query(models.Weight).filter(
+        models.Weight.user_id == current_user.id
+    ).order_by(desc(models.Weight.date_of_measurement)).first()
+
+    if latest_weight:
+        current_weight = float(latest_weight.weight)
+        target_weight = float(target.target_weight)
+
+        # Target is successful if current weight is at or below target weight
+        if current_weight <= target_weight:
+            target.status = "completed"
+        else:
+            target.status = "failed"
+    else:
+        # No weight data, mark as failed
+        target.status = "failed"
+
     db.commit()
     db.refresh(target)
-    
+
     return target
 
 
 @router.post("/{target_id}/cancel", response_model=schemas.TargetWeight)
-def cancel_target(
+async def cancel_target(
     target_id: int,
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db)
@@ -235,15 +304,15 @@ def cancel_target(
         models.TargetWeight.id == target_id,
         models.TargetWeight.user_id == current_user.id
     ).first()
-    
+
     if not target:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Target not found"
         )
-    
+
     target.status = "cancelled"
     db.commit()
     db.refresh(target)
-    
+
     return target

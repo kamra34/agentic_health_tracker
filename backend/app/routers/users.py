@@ -378,24 +378,31 @@ def get_my_stats(
 
 
 @router.get("/dashboard", response_model=schemas.DashboardData)
-def get_dashboard(
+async def get_dashboard(
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
     Get complete dashboard data including user info, stats, recent weights, and active targets with progress.
+    Automatically closes expired targets before returning results.
     """
+    # Import auto_close function from targets router
+    from .targets import auto_close_expired_targets
+
+    # Auto-close expired targets before fetching dashboard data
+    auto_close_expired_targets(db, current_user.id)
+
     # Get user with stats
     user_stats = get_my_profile(current_user, db)
-    
+
     # Get stats
     stats = get_my_stats(current_user, db)
-    
+
     # Get recent weights (last 30 for calculations)
     recent_weights = db.query(models.Weight).filter(
         models.Weight.user_id == current_user.id
     ).order_by(desc(models.Weight.date_of_measurement)).limit(30).all()
-    
+
     # Get active targets with detailed progress
     active_targets_raw = db.query(models.TargetWeight).filter(
         models.TargetWeight.user_id == current_user.id,

@@ -17,17 +17,17 @@ router = APIRouter(prefix="/api/targets", tags=["Targets"])
 
 def auto_close_expired_targets(db: Session, user_id: int) -> int:
     """
-    Automatically close targets that have reached or passed their due date.
+    Automatically close targets the day after their due date.
     Determines success/failure based on whether target weight was achieved.
     Returns number of targets closed.
     """
     today = date.today()
 
-    # Find all active targets that are due today or past due
+    # Find all active targets past their due date (closes day after target date)
     expired_targets = db.query(models.TargetWeight).filter(
         models.TargetWeight.user_id == user_id,
         models.TargetWeight.status == "active",
-        models.TargetWeight.date_of_target <= today
+        models.TargetWeight.date_of_target < today
     ).all()
 
     if not expired_targets:
@@ -122,7 +122,7 @@ async def list_targets(
             # Fallback to case-insensitive exact match
             query = query.filter(func.lower(models.TargetWeight.status) == normalized)
     
-    targets = query.order_by(desc(models.TargetWeight.created_date)).offset(skip).limit(limit).all()
+    targets = query.order_by(desc(models.TargetWeight.date_of_target)).offset(skip).limit(limit).all()
 
     # Compute enriched progress details per target
     latest_weight = db.query(models.Weight).filter(
@@ -152,7 +152,7 @@ async def get_active_targets(
     targets = db.query(models.TargetWeight).filter(
         models.TargetWeight.user_id == current_user.id,
         models.TargetWeight.status == "active"
-    ).order_by(models.TargetWeight.date_of_target).all()
+    ).order_by(desc(models.TargetWeight.date_of_target)).all()
 
     return targets
 

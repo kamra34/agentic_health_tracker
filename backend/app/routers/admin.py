@@ -141,7 +141,7 @@ def get_user_targets(
     db: Session = Depends(get_db)
 ):
     """List a user's targets with progress (admin only)."""
-    targets = db.query(models.TargetWeight).filter(models.TargetWeight.user_id == user_id).order_by(models.TargetWeight.created_date.desc()).all()
+    targets = db.query(models.TargetWeight).filter(models.TargetWeight.user_id == user_id).order_by(models.TargetWeight.date_of_target.desc()).all()
     # Determine current weight for this user
     latest_weight = db.query(models.Weight).filter(models.Weight.user_id == user_id).order_by(models.Weight.date_of_measurement.desc()).first()
     current_weight = float(latest_weight.weight) if latest_weight else 0.0

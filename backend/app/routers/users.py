@@ -407,7 +407,7 @@ async def get_dashboard(
     active_targets_raw = db.query(models.TargetWeight).filter(
         models.TargetWeight.user_id == current_user.id,
         models.TargetWeight.status == "active"
-    ).order_by(models.TargetWeight.date_of_target).all()
+    ).order_by(desc(models.TargetWeight.date_of_target)).all()
     
     # Calculate progress for each target
     active_targets = []

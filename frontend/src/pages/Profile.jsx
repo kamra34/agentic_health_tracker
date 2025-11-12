@@ -12,6 +12,7 @@ function Profile() {
     height: '',
     activity_level: '',
     date_of_birth: '',
+    timezone: '',
   });
 
   const { data: me, isLoading } = useQuery({
@@ -28,6 +29,7 @@ function Profile() {
         height: me.height ?? '',
         activity_level: me.activity_level || '',
         date_of_birth: me.date_of_birth || '',
+        timezone: me.timezone || 'UTC',
       });
     }
   }, [me]);
@@ -58,6 +60,7 @@ function Profile() {
       height: form.height ? parseFloat(form.height) : undefined,
       activity_level: form.activity_level || undefined,
       date_of_birth: form.date_of_birth || undefined,
+      timezone: form.timezone || undefined,
     };
     updateMutation.mutate(payload, {
       onSuccess: () => {
@@ -120,6 +123,42 @@ function Profile() {
             <label className="block text-sm font-medium text-gray-700 mb-1">Date of Birth</label>
             <input type="date" className="input" value={form.date_of_birth || ''}
               onChange={(e)=>setForm({...form, date_of_birth:e.target.value})} />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Timezone
+              <span className="text-xs text-gray-500 ml-2">(Used for chat and date calculations)</span>
+            </label>
+            <select className="input" value={form.timezone}
+              onChange={(e)=>setForm({...form, timezone:e.target.value})}>
+              <option value="UTC">UTC (Default)</option>
+              <optgroup label="Europe">
+                <option value="Europe/Stockholm">Europe/Stockholm (Sweden)</option>
+                <option value="Europe/London">Europe/London (UK)</option>
+                <option value="Europe/Paris">Europe/Paris (France)</option>
+                <option value="Europe/Berlin">Europe/Berlin (Germany)</option>
+                <option value="Europe/Madrid">Europe/Madrid (Spain)</option>
+                <option value="Europe/Rome">Europe/Rome (Italy)</option>
+              </optgroup>
+              <optgroup label="America">
+                <option value="America/New_York">America/New_York (EST/EDT)</option>
+                <option value="America/Chicago">America/Chicago (CST/CDT)</option>
+                <option value="America/Denver">America/Denver (MST/MDT)</option>
+                <option value="America/Los_Angeles">America/Los_Angeles (PST/PDT)</option>
+                <option value="America/Toronto">America/Toronto (Canada - EST)</option>
+              </optgroup>
+              <optgroup label="Asia">
+                <option value="Asia/Tokyo">Asia/Tokyo (Japan)</option>
+                <option value="Asia/Shanghai">Asia/Shanghai (China)</option>
+                <option value="Asia/Dubai">Asia/Dubai (UAE)</option>
+                <option value="Asia/Kolkata">Asia/Kolkata (India)</option>
+                <option value="Asia/Singapore">Asia/Singapore</option>
+              </optgroup>
+              <optgroup label="Pacific">
+                <option value="Australia/Sydney">Australia/Sydney</option>
+                <option value="Pacific/Auckland">Pacific/Auckland (New Zealand)</option>
+              </optgroup>
+            </select>
           </div>
         </div>
 

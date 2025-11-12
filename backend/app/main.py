@@ -5,6 +5,7 @@ FastAPI backend for weight tracking with user authentication and analytics.
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
+from datetime import datetime
 
 from .config import settings
 from .database import engine, Base
@@ -130,6 +131,8 @@ def health_check():
 @app.get("/api/version")
 def version():
     """Version information endpoint."""
+    import sys
+    print(f"[VERSION-CHECK] Version endpoint called at {datetime.now()}", flush=True, file=sys.stderr)
     response = {
         "app_name": settings.app_name,
         "version": settings.app_version,

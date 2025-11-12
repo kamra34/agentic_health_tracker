@@ -143,6 +143,23 @@ def calculate_target_progress(
     )
 
 
+@router.get("/debug", response_model=dict)
+def debug_user(
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Debug endpoint to see raw user object.
+    """
+    return {
+        "id": current_user.id,
+        "name": current_user.name,
+        "timezone": current_user.timezone,
+        "has_timezone_attr": hasattr(current_user, 'timezone'),
+        "timezone_value": getattr(current_user, 'timezone', 'NOT_FOUND')
+    }
+
+
 @router.get("/me", response_model=schemas.UserWithStats)
 def get_my_profile(
     current_user: models.User = Depends(get_current_user),

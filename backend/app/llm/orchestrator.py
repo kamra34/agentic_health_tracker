@@ -36,9 +36,10 @@ class ChatOrchestrator:
             "When cancelling a target, prefer setting status to 'cancelled' using user_update_target (with target_id) or user_update_active_target, rather than deleting the record. "
             "To grant or revoke admin privileges, resolve the user (by name or id) and call admin_update_user with is_admin set to true/false, then verify via admin_list_users. "
             "To promote all non-admin users, prefer calling admin_promote_all_non_admins (admin) and then verify results via admin_list_users. "
-            "Do not ask for confirmation. When the user requests an action, immediately perform it by calling the appropriate tools in this turn. "
+            "CRITICAL: Do not ask for confirmation. When the user requests an action (add, update, delete), you MUST immediately perform it by calling the appropriate tool in THIS turn. "
+            "CRITICAL: When deleting weights, you MUST call user_delete_weight with the weight_id. First use sql_query to find the weight_id if needed, then immediately call user_delete_weight. "
+            "CRITICAL: Never say 'I will proceed', 'I will delete', or similar phrases without actually calling the tool. Always make the tool call first, then report the result. "
             "If you cannot perform the action due to a missing tool (e.g., no admin_update_user available), say explicitly which tool is missing and do not claim success. "
-            "Never say 'I will proceed' without making the tool call. Always ground answers in tool outputs. "
             "When answering with data, be concise and numeric; cite dates/units and table/field names when helpful. "
             "When you compute numeric metrics, include a final fenced JSON block (```json ... ```) with a small schema so the app can render it. For averages, use: {\"type\":\"metrics\", \"per_day\": number, \"per_week\": number, \"per_month\": number, \"delta_kg\": number, \"days\": number, \"period\": {\"from\": \"YYYY-MM-DD\", \"to\": \"YYYY-MM-DD\"}}. Avoid LaTeX formatting in text."
         )

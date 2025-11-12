@@ -17,6 +17,7 @@ class UserBase(BaseModel):
     activity_level: Optional[str] = Field(None, max_length=10)
     date_of_birth: Optional[date] = None
     email: Optional[str] = None
+    timezone: Optional[str] = Field(None, max_length=50)
 
 
 class UserCreate(UserBase):
@@ -55,6 +56,7 @@ class UserUpdate(BaseModel):
     height: Optional[Decimal] = Field(None, ge=0, le=300)
     activity_level: Optional[str] = Field(None, max_length=10)
     date_of_birth: Optional[date] = None
+    timezone: Optional[str] = Field(None, max_length=50)
 
 
 class User(UserBase):

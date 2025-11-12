@@ -248,7 +248,9 @@ def update_my_profile(
         current_user.activity_level = user_update.activity_level
     if user_update.date_of_birth is not None:
         current_user.date_of_birth = user_update.date_of_birth
-    
+    if user_update.timezone is not None:
+        current_user.timezone = user_update.timezone
+
     db.commit()
     db.refresh(current_user)
     

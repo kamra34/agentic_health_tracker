@@ -20,6 +20,7 @@ class User(Base):
     password_hash = Column(String(100), nullable=False)
     is_admin = Column(Boolean, default=False)
     date_of_birth = Column(Date)
+    timezone = Column(String(50), default="UTC")  # User's timezone (e.g., 'Europe/Stockholm', 'America/New_York')
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 

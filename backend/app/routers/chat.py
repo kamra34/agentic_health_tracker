@@ -11,7 +11,8 @@ POST /api/chat
 Environment: settings.openai_api_key must be set (OPENAI_API_KEY).
 """
 from typing import List, Optional, Dict, Any
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -51,6 +52,16 @@ class ChatResponse(BaseModel):
 
 
 # -------------------- Helpers --------------------
+def _get_user_today(user_timezone: Optional[str] = None) -> date:
+    """Get today's date in the user's timezone. Defaults to UTC if not specified."""
+    try:
+        tz = ZoneInfo(user_timezone) if user_timezone else ZoneInfo("UTC")
+        return datetime.now(tz).date()
+    except Exception:
+        # Fallback to UTC if timezone is invalid
+        return datetime.now(ZoneInfo("UTC")).date()
+
+
 def _safe_float(val: Any) -> Optional[float]:
     try:
         if val is None:
@@ -155,7 +166,7 @@ def _fetch_optional_table_for_user(table_name: str, user_id: int, limit: int = 2
         return None
 
 
-def _gather_user_context(db: Session, user: models.User) -> Dict[str, Any]:
+def _gather_user_context(db: Session, user: models.User, today: date) -> Dict[str, Any]:
     ctx: Dict[str, Any] = {}
     # Profile
     ctx["user_profile"] = {
@@ -166,6 +177,7 @@ def _gather_user_context(db: Session, user: models.User) -> Dict[str, Any]:
         "height_cm": _safe_float(user.height),
         "activity_level": user.activity_level,
         "date_of_birth": user.date_of_birth.isoformat() if user.date_of_birth else None,
+        "timezone": user.timezone or "UTC",
         "is_admin": bool(user.is_admin),
         "created_at": user.created_at.isoformat() if user.created_at else None,
     }
@@ -194,7 +206,7 @@ def _gather_user_context(db: Session, user: models.User) -> Dict[str, Any]:
     if weights_data:
         latest_w = weights_data[0]["weight_kg"]
         # 30-day comparison
-        thirty_days_ago = date.today() - timedelta(days=30)
+        thirty_days_ago = today - timedelta(days=30)
         w_30 = (
             db.query(models.Weight)
             .filter(models.Weight.user_id == user.id, models.Weight.date_of_measurement <= thirty_days_ago)
@@ -287,9 +299,10 @@ def _gather_admin_overview(db: Session) -> Dict[str, Any]:
     return out
 
 
-def _build_system_prompt() -> str:
+def _build_system_prompt(today_date: date, user_timezone: str) -> str:
     return (
-        "You are a helpful health and weight tracking assistant for this app. "
+        f"You are a helpful health and weight tracking assistant for this app. "
+        f"Today's date is {today_date.isoformat()} in the user's timezone ({user_timezone}). "
         "Answer using ONLY the provided Context (schema + user data). "
         "If the answer is not in the Context, ask a clarifying question or say you don't have that data. "
         "Be concise and numeric when possible, and cite dates/units. "
@@ -332,15 +345,18 @@ def chat(
     if not settings.openai_api_key:
         raise HTTPException(status_code=500, detail="OPENAI_API_KEY not configured on server.")
 
-    # Prepare context
+    # Prepare context with user's timezone
+    user_timezone = current_user.timezone or "UTC"
+    today = _get_user_today(user_timezone)
+
     schema_text = _summarize_schema()
-    user_ctx = _gather_user_context(db, current_user)
+    user_ctx = _gather_user_context(db, current_user, today)
     # Optionally include admin-wide context when requested and authorized
     admin_ctx: Optional[Dict[str, Any]] = None
     # For admins, include an admin overview by default so policy/count questions are answerable.
     if current_user.is_admin:
         admin_ctx = _gather_admin_overview(db)
-    system_prompt = _build_system_prompt()
+    system_prompt = _build_system_prompt(today, user_timezone)
     # Merge context parts
     if admin_ctx:
         context_blob = _build_context_blob(schema_text, {"current_user": user_ctx, "admin_overview": admin_ctx})

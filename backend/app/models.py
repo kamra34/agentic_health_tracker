@@ -54,7 +54,7 @@ class PasswordResetToken(Base):
 class Weight(Base):
     """Weight model matching the 'weights' table."""
     __tablename__ = "weights"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     date_of_measurement = Column(Date, nullable=False)
@@ -63,7 +63,8 @@ class Weight(Base):
     muscle_mass = Column(Numeric(5, 2))  # optional
     notes = Column(String)  # optional
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
     # Relationships
     user = relationship("User", back_populates="weights")
     

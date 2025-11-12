@@ -51,6 +51,14 @@ async def lifespan(app: FastAPI):
                 UPDATE users SET timezone = 'UTC' WHERE timezone IS NULL;
             """))
 
+            # Add updated_at column to weights table
+            conn.execute(text("""
+                ALTER TABLE weights ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;
+            """))
+            conn.execute(text("""
+                UPDATE weights SET updated_at = created_at WHERE updated_at IS NULL;
+            """))
+
             conn.commit()
         except Exception as e:
             print(f"Migration note: {e}")

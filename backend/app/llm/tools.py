@@ -56,6 +56,18 @@ def summarize_schema() -> str:
 
 
 def gather_user_context(db: Session, user: models.User) -> Dict[str, Any]:
+    import sys
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    # Calculate user's today based on their timezone
+    user_timezone = user.timezone or "UTC"
+    user_tz = ZoneInfo(user_timezone)
+    user_today = datetime.now(user_tz).date()
+
+    print(f"[CONTEXT-DEBUG] User {user.id} timezone: {user.timezone} -> using: {user_timezone}", flush=True, file=sys.stderr)
+    print(f"[CONTEXT-DEBUG] Calculated today: {user_today}", flush=True, file=sys.stderr)
+
     ctx: Dict[str, Any] = {}
     ctx["user_profile"] = {
         "id": user.id,
@@ -67,6 +79,8 @@ def gather_user_context(db: Session, user: models.User) -> Dict[str, Any]:
         "date_of_birth": user.date_of_birth.isoformat() if user.date_of_birth else None,
         "is_admin": bool(user.is_admin),
         "created_at": user.created_at.isoformat() if user.created_at else None,
+        "timezone": user_timezone,
+        "today": user_today.isoformat(),
     }
     # latest 30 weights (quick context only)
     weights = (

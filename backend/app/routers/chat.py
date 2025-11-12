@@ -349,7 +349,9 @@ def chat(
 
     # Prepare context with user's timezone
     user_timezone = current_user.timezone or "UTC"
+    print(f"[DEBUG] User {current_user.id} timezone: {current_user.timezone} -> using: {user_timezone}")
     today = _get_user_today(user_timezone)
+    print(f"[DEBUG] Calculated today: {today}")
 
     schema_text = _summarize_schema()
     user_ctx = _gather_user_context(db, current_user, today)

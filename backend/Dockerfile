@@ -1,6 +1,14 @@
 # Python 3.11 slim image
 FROM python:3.11-slim
 
+# Build arguments for versioning
+ARG GIT_COMMIT=unknown
+ARG BUILD_DATE=unknown
+
+# Set environment variables for version info
+ENV GIT_COMMIT=${GIT_COMMIT}
+ENV BUILD_DATE=${BUILD_DATE}
+
 # Set working directory
 WORKDIR /app
 

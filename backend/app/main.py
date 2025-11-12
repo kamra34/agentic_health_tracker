@@ -21,6 +21,14 @@ from . import models  # noqa: F401
 async def lifespan(app: FastAPI):
     """Application lifespan events."""
     # Startup
+    print("=" * 60)
+    print(f"🚀 {settings.app_name} v{settings.app_version}")
+    if settings.git_commit:
+        print(f"📦 Git Commit: {settings.git_commit[:8]}")
+    if settings.build_date:
+        print(f"🕐 Build Date: {settings.build_date}")
+    print("=" * 60)
+
     Base.metadata.create_all(bind=engine)
 
     # Run migrations to add updated_at column if it doesn't exist
@@ -100,18 +108,38 @@ app.include_router(chat.router)
 @app.get("/")
 def root():
     """Root endpoint - API status."""
-    return {
+    response = {
         "message": "Welcome to Weight Tracker API",
         "version": settings.app_version,
         "status": "healthy",
         "docs": "/docs"
     }
+    if settings.git_commit:
+        response["git_commit"] = settings.git_commit[:8]
+    if settings.build_date:
+        response["build_date"] = settings.build_date
+    return response
 
 
 @app.get("/health")
 def health_check():
     """Health check endpoint for monitoring."""
     return {"status": "healthy"}
+
+
+@app.get("/api/version")
+def version():
+    """Version information endpoint."""
+    response = {
+        "app_name": settings.app_name,
+        "version": settings.app_version,
+    }
+    if settings.git_commit:
+        response["git_commit"] = settings.git_commit
+        response["git_commit_short"] = settings.git_commit[:8]
+    if settings.build_date:
+        response["build_date"] = settings.build_date
+    return response
 
 
 if __name__ == "__main__":

@@ -1,12 +1,14 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Outlet, NavLink } from 'react-router-dom';
 import { Home, TrendingUp, Target, BarChart3, LogOut, User, Menu, X } from 'lucide-react';
 import useAuthStore from '../stores/authStore';
 import ChatWidget from './ChatWidget';
+import { versionAPI } from '../services/api';
 
 function Layout() {
   const { user, logout } = useAuthStore();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [version, setVersion] = useState(null);
 
   const navItems = [
     { to: '/dashboard', icon: Home, label: 'Dashboard' },
@@ -16,6 +18,13 @@ function Layout() {
     { to: '/profile', icon: User, label: 'Profile' },
     ...(user?.is_admin ? [{ to: '/admin', icon: User, label: 'Admin' }] : []),
   ];
+
+  useEffect(() => {
+    // Fetch version info on mount
+    versionAPI.getVersion()
+      .then(res => setVersion(res.data))
+      .catch(() => {});
+  }, []);
 
   const closeMobileMenu = () => setIsMobileMenuOpen(false);
 
@@ -71,8 +80,8 @@ function Layout() {
           ))}
         </nav>
 
-        <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-gray-200">
-          <div className="flex items-center justify-between">
+        <div className="absolute bottom-0 left-0 right-0 border-t border-gray-200">
+          <div className="p-4 flex items-center justify-between">
             <div>
               <p className="font-medium text-gray-800">{user?.name}</p>
               <p className="text-sm text-gray-500">
@@ -87,6 +96,21 @@ function Layout() {
               <LogOut size={20} />
             </button>
           </div>
+          {version && (
+            <div className="px-4 pb-3 text-xs text-gray-400 border-t border-gray-100 pt-2">
+              <div className="flex items-center justify-between">
+                <span>v{version.version}</span>
+                {version.git_commit_short && (
+                  <span title={`Git: ${version.git_commit}`}>
+                    {version.git_commit_short}
+                  </span>
+                )}
+              </div>
+              {version.build_date && version.build_date !== 'unknown' && (
+                <div className="text-gray-400 mt-0.5">{version.build_date}</div>
+              )}
+            </div>
+          )}
         </div>
       </aside>
 

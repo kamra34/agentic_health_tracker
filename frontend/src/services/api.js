@@ -123,5 +123,10 @@ export const chatAPI = {
   getTask: (taskId) => api.get(`/api/chat/v2/tasks/${taskId}`),
 };
 
+// Version API
+export const versionAPI = {
+  getVersion: () => api.get('/api/version'),
+};
+
 export default api;
 

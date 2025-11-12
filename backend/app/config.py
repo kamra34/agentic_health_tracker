@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     # App Info
     app_name: str = "Weight Tracker API"
     app_version: str = "1.0.0"
+    git_commit: Optional[str] = None  # Git commit hash from environment
+    build_date: Optional[str] = None  # Build timestamp from environment
     debug: bool = False
 
     # Database

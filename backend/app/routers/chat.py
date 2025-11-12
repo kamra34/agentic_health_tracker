@@ -60,6 +60,52 @@ def _safe_float(val: Any) -> Optional[float]:
         return None
 
 
+def _calculate_bmi(weight_kg: float, height_cm: Optional[float]) -> float:
+    if not height_cm or height_cm <= 0:
+        return 0.0
+    h_m = float(height_cm) / 100.0
+    return round(float(weight_kg) / (h_m * h_m), 2)
+
+
+def _age_on(date_of_birth: Optional[date], on_date: Optional[date] = None) -> int:
+    from datetime import date as _date
+    if not date_of_birth:
+        return 0
+    if on_date is None:
+        on_date = _date.today()
+    years = on_date.year - date_of_birth.year - ((on_date.month, on_date.day) < (date_of_birth.month, date_of_birth.day))
+    return max(0, years)
+
+
+def _is_male(sex: Optional[str]) -> bool:
+    if not sex:
+        return False
+    s = str(sex).strip().lower()
+    return s.startswith("m")  # 'male' or 'm'
+
+
+def _estimate_body_fat_percent(bmi: float, age_years: int, sex: Optional[str]) -> Optional[float]:
+    # Deurenberg equation; sex: 1 for male, 0 for female
+    if bmi <= 0 or age_years <= 0:
+        return None
+    sex_flag = 1 if _is_male(sex) else 0
+    bf = 1.2 * bmi + 0.23 * age_years - 10.8 * sex_flag - 5.4
+    bf = max(3.0, min(60.0, bf))  # clamp
+    return round(bf, 2)
+
+
+def _estimate_lean_body_mass(weight_kg: float, height_cm: Optional[float], sex: Optional[str]) -> Optional[float]:
+    # Boer formula (lean body mass as a proxy for muscle mass)
+    if not height_cm:
+        return None
+    if _is_male(sex):
+        lbm = 0.407 * float(weight_kg) + 0.267 * float(height_cm) - 19.2
+    else:
+        lbm = 0.252 * float(weight_kg) + 0.473 * float(height_cm) - 48.3
+    lbm = max(0.0, min(float(weight_kg), lbm))
+    return round(lbm, 2)
+
+
 def _summarize_schema() -> str:
     """Return a compact schema description for all tables in the DB."""
     insp = inspect(engine)
@@ -556,6 +602,20 @@ def chat(
                     muscle_mass=args.get("muscle_mass"),
                     notes=args.get("notes"),
                 )
+
+                # Auto-estimate missing values if profile allows
+                height_cm = float(current_user.height) if current_user.height is not None else None
+                age_years = _age_on(current_user.date_of_birth, dom_d)
+                bmi = _calculate_bmi(float(w), height_cm)
+                if obj.body_fat_percentage is None:
+                    est_bf = _estimate_body_fat_percent(bmi, age_years, current_user.sex)
+                    if est_bf is not None:
+                        obj.body_fat_percentage = est_bf
+                if obj.muscle_mass is None:
+                    est_lbm = _estimate_lean_body_mass(float(w), height_cm, current_user.sex)
+                    if est_lbm is not None:
+                        obj.muscle_mass = est_lbm
+
                 db.add(obj)
                 db.commit()
                 db.refresh(obj)

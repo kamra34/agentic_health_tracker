@@ -29,4 +29,4 @@ COPY . .
 EXPOSE 8000
 
 # Run the application (bind to PORT if provided by platform)
-CMD ["/bin/sh", "-c", "echo '=== Docker Build: 2025-11-12T14:00 ===' && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+CMD ["/bin/sh", "-c", "echo '=== Docker Build: 2025-11-12T14:30 ===' && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]

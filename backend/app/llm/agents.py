@@ -566,18 +566,41 @@ class ActionAgent(BaseAgent):
             existing = self.db.query(models.Weight).filter(models.Weight.user_id == self.user.id, models.Weight.date_of_measurement == dom_d).first()
             if existing:
                 return {"error": f"Weight entry already exists for {dom}"}
+
+            # Get provided values or None
+            body_fat = args.get("body_fat_percentage")
+            muscle = args.get("muscle_mass")
+
+            # Auto-estimate missing values if user profile allows
+            if body_fat is None or muscle is None:
+                height_cm = safe_float(self.user.height)
+                age_years = age_on(self.user.date_of_birth, dom_d)
+                bmi = calc_bmi(w, height_cm)
+
+                if body_fat is None and bmi and age_years:
+                    body_fat = estimate_body_fat_percent(bmi, age_years, self.user.sex)
+
+                if muscle is None and height_cm:
+                    muscle = estimate_lean_body_mass(w, height_cm, self.user.sex)
+
             obj = models.Weight(
                 user_id=self.user.id,
                 date_of_measurement=dom_d,
                 weight=w,
-                body_fat_percentage=args.get("body_fat_percentage"),
-                muscle_mass=args.get("muscle_mass"),
+                body_fat_percentage=body_fat,
+                muscle_mass=muscle,
                 notes=args.get("notes"),
             )
             self.db.add(obj)
             self.db.commit()
             self.db.refresh(obj)
-            return {"id": obj.id, "date": obj.date_of_measurement.isoformat(), "weight": safe_float(obj.weight)}
+            return {
+                "id": obj.id,
+                "date": obj.date_of_measurement.isoformat(),
+                "weight": safe_float(obj.weight),
+                "body_fat_percentage": safe_float(obj.body_fat_percentage),
+                "muscle_mass": safe_float(obj.muscle_mass)
+            }
 
         if tool_name == "user_update_latest_weight":
             from sqlalchemy import desc as _desc

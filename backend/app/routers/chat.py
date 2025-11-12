@@ -303,6 +303,8 @@ def _build_system_prompt(today_date: date, user_timezone: str) -> str:
     return (
         f"You are a helpful health and weight tracking assistant for this app. "
         f"Today's date is {today_date.isoformat()} in the user's timezone ({user_timezone}). "
+        f"The user's timezone is {user_timezone} and is available in the user_profile.timezone field in the Context. "
+        f"When answering questions about today or dates, always use {today_date.isoformat()} as today's date. "
         "Answer using ONLY the provided Context (schema + user data). "
         "If the answer is not in the Context, ask a clarifying question or say you don't have that data. "
         "Be concise and numeric when possible, and cite dates/units. "
